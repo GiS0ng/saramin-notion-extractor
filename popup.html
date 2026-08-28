@@ -10,12 +10,31 @@
   <main>
     <h1>채용공고 추출</h1>
     <p class="sub">현재 사람인 공고를 Notion DB 형식으로 정리합니다.</p>
+    <details id="notionSettings">
+      <summary>Notion 연결 설정</summary>
+      <div class="settings-body">
+        <label for="notionToken">Notion 액세스 토큰</label>
+        <div class="secret-row">
+          <input id="notionToken" type="password" autocomplete="off" placeholder="ntn_ 또는 secret_로 시작">
+          <button id="toggleToken" class="small secondary" type="button">보기</button>
+        </div>
+        <label for="dataSourceId">데이터 소스 ID</label>
+        <input id="dataSourceId" type="text" autocomplete="off">
+        <div class="settings-actions">
+          <button id="saveSettings" class="secondary" type="button">설정 저장</button>
+          <button id="testNotion" class="secondary" type="button">연결 테스트</button>
+        </div>
+        <button id="deleteToken" class="danger" type="button">저장된 토큰 삭제</button>
+        <p class="hint">토큰은 이 브라우저의 확장 프로그램 저장소에만 보관됩니다.</p>
+      </div>
+    </details>
     <button id="scan" type="button">페이지 스캔</button>
     <p id="status" role="status">사람인 공고 페이지에서 실행해 주세요.</p>
     <section id="result" hidden>
       <label>추출 결과</label>
       <textarea id="preview" readonly></textarea>
       <button id="ocr" class="ocr" type="button" hidden>이미지 OCR로 읽기</button>
+      <button id="saveNotion" class="notion" type="button">Notion에 저장</button>
       <div id="progress" class="progress" hidden>
         <div><span id="progressText">OCR 준비 중…</span><strong id="progressValue">0%</strong></div>
         <progress id="progressBar" max="100" value="0"></progress>

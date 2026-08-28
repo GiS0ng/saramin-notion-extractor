@@ -7,7 +7,74 @@ const progressBox = document.querySelector("#progress");
 const progressBar = document.querySelector("#progressBar");
 const progressText = document.querySelector("#progressText");
 const progressValue = document.querySelector("#progressValue");
+const notionToken = document.querySelector("#notionToken");
+const dataSourceId = document.querySelector("#dataSourceId");
+const notionSettings = document.querySelector("#notionSettings");
+const saveNotionButton = document.querySelector("#saveNotion");
 let extracted = null;
+const DEFAULT_DATA_SOURCE_ID = "993d726e-f27e-4c40-a843-eb6ac21ac311";
+
+async function loadNotionSettings() {
+  const saved = await chrome.storage.local.get(["notionToken", "notionDataSourceId"]);
+  notionToken.value = saved.notionToken || "";
+  dataSourceId.value = saved.notionDataSourceId || DEFAULT_DATA_SOURCE_ID;
+}
+
+async function persistNotionSettings() {
+  const token = notionToken.value.trim();
+  const sourceId = dataSourceId.value.trim();
+  if (!token) throw new Error("Notion 액세스 토큰을 입력해 주세요.");
+  if (!sourceId) throw new Error("데이터 소스 ID를 입력해 주세요.");
+  await chrome.storage.local.set({ notionToken: token, notionDataSourceId: sourceId });
+}
+
+loadNotionSettings();
+
+document.querySelector("#toggleToken").addEventListener("click", event => {
+  const show = notionToken.type === "password";
+  notionToken.type = show ? "text" : "password";
+  event.currentTarget.textContent = show ? "숨기기" : "보기";
+});
+
+document.querySelector("#saveSettings").addEventListener("click", async () => {
+  try {
+    await persistNotionSettings();
+    notionSettings.open = false;
+    setStatus("Notion 연결 설정을 저장했습니다.");
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+});
+
+document.querySelector("#deleteToken").addEventListener("click", async () => {
+  if (!notionToken.value && !(await chrome.storage.local.get("notionToken")).notionToken) {
+    setStatus("이 PC에 저장된 Notion 토큰이 없습니다.");
+    return;
+  }
+  if (!confirm("이 PC에 저장된 Notion 액세스 토큰을 삭제할까요?")) return;
+  await chrome.storage.local.remove("notionToken");
+  notionToken.value = "";
+  notionToken.type = "password";
+  document.querySelector("#toggleToken").textContent = "보기";
+  setStatus("이 PC에 저장된 Notion 토큰을 삭제했습니다.");
+});
+
+document.querySelector("#testNotion").addEventListener("click", async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await persistNotionSettings();
+    setStatus("Notion 연결을 확인하는 중입니다…");
+    const response = await chrome.runtime.sendMessage({ type: "TEST_NOTION" });
+    if (!response?.ok) throw new Error(response?.error || "연결 테스트에 실패했습니다.");
+    setStatus(`Notion 연결 성공: ${response.data.title}`);
+    notionSettings.open = false;
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function publicData(data) {
   const { _ocrImages, _needsOcr, ...visible } = data || {};
@@ -73,6 +140,25 @@ document.querySelector("#download").addEventListener("click", () => {
   a.download = `${(visible["회사/직무(제목)"] || "채용공고").replace(/[\\/:*?\"<>|]/g, "_")}.json`;
   a.click();
   URL.revokeObjectURL(url);
+});
+
+saveNotionButton.addEventListener("click", async () => {
+  if (!extracted) return;
+  saveNotionButton.disabled = true;
+  try {
+    await persistNotionSettings();
+    setStatus("Notion에서 중복을 확인하고 저장하는 중입니다…");
+    const response = await chrome.runtime.sendMessage({ type: "SAVE_NOTION_JOB", data: publicData(extracted) });
+    if (!response?.ok) throw new Error(response?.error || "Notion 저장에 실패했습니다.");
+    const verb = response.data.action === "updated" ? "기존 공고를 업데이트했습니다." : "새 공고를 등록했습니다.";
+    setStatus(`${verb} Notion 페이지를 새 탭에서 엽니다.`);
+    if (response.data.url) await chrome.tabs.create({ url: response.data.url });
+  } catch (error) {
+    notionSettings.open = true;
+    setStatus(error.message, true);
+  } finally {
+    saveNotionButton.disabled = false;
+  }
 });
 
 function updateProgress(message) {
