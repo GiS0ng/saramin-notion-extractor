@@ -13,6 +13,17 @@ const notionSettings = document.querySelector("#notionSettings");
 const saveNotionButton = document.querySelector("#saveNotion");
 let extracted = null;
 const DEFAULT_DATA_SOURCE_ID = "993d726e-f27e-4c40-a843-eb6ac21ac311";
+const SEARCH_URLS_KEY = "saraminSearchUrls";
+const AUTO_STATE_KEY = "autoCollectionState";
+const searchUrlForm = document.querySelector("#searchUrlForm");
+const searchName = document.querySelector("#searchName");
+const searchUrl = document.querySelector("#searchUrl");
+const searchUrlList = document.querySelector("#searchUrlList");
+const cancelSearchEdit = document.querySelector("#cancelSearchEdit");
+const runAutoCollectionButton = document.querySelector("#runAutoCollection");
+const autoStatus = document.querySelector("#autoStatus");
+let searchUrls = [];
+let editingSearchId = null;
 
 async function loadNotionSettings() {
   const saved = await chrome.storage.local.get(["notionToken", "notionDataSourceId"]);
@@ -29,6 +40,151 @@ async function persistNotionSettings() {
 }
 
 loadNotionSettings();
+
+function validSaraminSearchUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && (url.hostname === "saramin.co.kr" || url.hostname.endsWith(".saramin.co.kr"));
+  } catch (_) {
+    return false;
+  }
+}
+
+function resetSearchForm() {
+  editingSearchId = null;
+  searchUrlForm.reset();
+  document.querySelector("#saveSearchUrl").textContent = "URL 추가";
+  cancelSearchEdit.hidden = true;
+}
+
+async function persistSearchUrls() {
+  await chrome.storage.local.set({ [SEARCH_URLS_KEY]: searchUrls });
+}
+
+function renderSearchUrls() {
+  searchUrlList.replaceChildren();
+  if (!searchUrls.length) {
+    const empty = document.createElement("div");
+    empty.className = "url-empty";
+    empty.textContent = "등록된 검색 URL이 없습니다.";
+    searchUrlList.append(empty);
+    return;
+  }
+
+  searchUrls.forEach(item => {
+    const box = document.createElement("div");
+    box.className = `url-item${item.enabled ? "" : " disabled"}`;
+    const heading = document.createElement("div");
+    heading.className = "url-heading";
+    const name = document.createElement("span");
+    name.className = "url-name";
+    name.textContent = item.name;
+    const state = document.createElement("span");
+    state.className = "hint";
+    state.textContent = item.enabled ? "활성" : "비활성";
+    heading.append(name, state);
+    const link = document.createElement("span");
+    link.className = "url-link";
+    link.title = item.url;
+    link.textContent = item.url;
+    const actions = document.createElement("div");
+    actions.className = "url-actions";
+    [["toggle", item.enabled ? "비활성화" : "활성화"], ["edit", "수정"], ["delete", "삭제"]].forEach(([action, label]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = action === "delete" ? "danger" : "secondary";
+      button.dataset.action = action;
+      button.dataset.id = item.id;
+      button.textContent = label;
+      actions.append(button);
+    });
+    box.append(heading, link, actions);
+    searchUrlList.append(box);
+  });
+}
+
+function formatAutoState(state) {
+  if (!state?.status) return "실행 기록이 없습니다.";
+  if (state.running) return `실행 중 · ${state.processedSearchUrls || 0}/${state.totalSearchUrls || 0}개 URL`;
+  const time = state.finishedAt ? new Date(state.finishedAt).toLocaleString("ko-KR") : "";
+  if (state.status === "failed") return `실패 · ${state.error || "알 수 없는 오류"}`;
+  return `최근 완료 ${time} · 활성 URL ${state.processedSearchUrls || 0}개`;
+}
+
+async function loadAutoSettings() {
+  const saved = await chrome.storage.local.get([SEARCH_URLS_KEY, AUTO_STATE_KEY]);
+  searchUrls = Array.isArray(saved[SEARCH_URLS_KEY]) ? saved[SEARCH_URLS_KEY] : [];
+  renderSearchUrls();
+  autoStatus.textContent = formatAutoState(saved[AUTO_STATE_KEY]);
+  await chrome.runtime.sendMessage({ type: "ENSURE_AUTO_ALARM" });
+}
+
+loadAutoSettings().catch(error => {
+  autoStatus.textContent = `자동 수집 설정을 불러오지 못했습니다: ${error.message}`;
+});
+
+searchUrlForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const name = searchName.value.trim();
+  const url = searchUrl.value.trim();
+  if (!name || !url) return;
+  if (!validSaraminSearchUrl(url)) {
+    setStatus("https:// 사람인 검색 URL을 입력해 주세요.", true);
+    return;
+  }
+  if (editingSearchId) {
+    searchUrls = searchUrls.map(item => item.id === editingSearchId ? { ...item, name, url } : item);
+  } else {
+    searchUrls.push({ id: crypto.randomUUID(), name, url, enabled: true });
+  }
+  await persistSearchUrls();
+  renderSearchUrls();
+  resetSearchForm();
+  setStatus("검색 URL 목록을 저장했습니다.");
+});
+
+cancelSearchEdit.addEventListener("click", resetSearchForm);
+
+searchUrlList.addEventListener("click", async event => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const item = searchUrls.find(entry => entry.id === button.dataset.id);
+  if (!item) return;
+  if (button.dataset.action === "edit") {
+    editingSearchId = item.id;
+    searchName.value = item.name;
+    searchUrl.value = item.url;
+    document.querySelector("#saveSearchUrl").textContent = "수정 저장";
+    cancelSearchEdit.hidden = false;
+    searchName.focus();
+    return;
+  }
+  if (button.dataset.action === "delete") {
+    if (!confirm(`‘${item.name}’ 검색 URL을 삭제할까요?`)) return;
+    searchUrls = searchUrls.filter(entry => entry.id !== item.id);
+    if (editingSearchId === item.id) resetSearchForm();
+  } else {
+    searchUrls = searchUrls.map(entry => entry.id === item.id ? { ...entry, enabled: !entry.enabled } : entry);
+  }
+  await persistSearchUrls();
+  renderSearchUrls();
+});
+
+runAutoCollectionButton.addEventListener("click", async () => {
+  runAutoCollectionButton.disabled = true;
+  autoStatus.textContent = "자동 수집 테스트를 시작합니다…";
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "RUN_AUTO_COLLECTION" });
+    if (!response?.ok) throw new Error(response?.error || "자동 수집 테스트에 실패했습니다.");
+    autoStatus.textContent = formatAutoState(response.data);
+    setStatus("활성 검색 URL의 순차 전달 테스트를 완료했습니다.");
+  } catch (error) {
+    autoStatus.textContent = `실패 · ${error.message}`;
+    setStatus(error.message, true);
+  } finally {
+    runAutoCollectionButton.disabled = false;
+  }
+});
 
 document.querySelector("#toggleToken").addEventListener("click", event => {
   const show = notionToken.type === "password";

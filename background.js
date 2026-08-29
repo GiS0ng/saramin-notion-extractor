@@ -1,4 +1,117 @@
 const NOTION_VERSION = "2026-03-11";
+const AUTO_COLLECTION_ALARM = "weekly-saramin-auto-collection";
+const WEEK_IN_MINUTES = 7 * 24 * 60;
+const SEARCH_URLS_KEY = "saraminSearchUrls";
+const AUTO_STATE_KEY = "autoCollectionState";
+let autoCollectionPromise = null;
+
+function nextMondayAtNine(now = new Date()) {
+  const next = new Date(now);
+  const daysUntilMonday = (8 - next.getDay()) % 7;
+  next.setDate(next.getDate() + daysUntilMonday);
+  next.setHours(9, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 7);
+  return next;
+}
+
+async function ensureWeeklyAlarm() {
+  const alarm = await chrome.alarms.get(AUTO_COLLECTION_ALARM);
+  if (alarm?.periodInMinutes === WEEK_IN_MINUTES) return alarm;
+  if (alarm) await chrome.alarms.clear(AUTO_COLLECTION_ALARM);
+  chrome.alarms.create(AUTO_COLLECTION_ALARM, {
+    when: nextMondayAtNine().getTime(),
+    periodInMinutes: WEEK_IN_MINUTES
+  });
+  return chrome.alarms.get(AUTO_COLLECTION_ALARM);
+}
+
+async function setAutoState(changes) {
+  const saved = await chrome.storage.local.get(AUTO_STATE_KEY);
+  const state = { ...(saved[AUTO_STATE_KEY] || {}), ...changes };
+  await chrome.storage.local.set({ [AUTO_STATE_KEY]: state });
+  return state;
+}
+
+async function processSearchUrl(_item) {
+  // 다음 단계에서 검색 결과 DOM 수집을 이 함수에 연결합니다.
+  return { status: "queued" };
+}
+
+async function runAutoCollection(trigger = "manual") {
+  if (autoCollectionPromise) throw new Error("자동 수집이 이미 실행 중입니다.");
+
+  autoCollectionPromise = (async () => {
+    const saved = await chrome.storage.local.get(SEARCH_URLS_KEY);
+    const urls = (saved[SEARCH_URLS_KEY] || []).filter(item => item?.enabled);
+    const startedAt = new Date().toISOString();
+    await setAutoState({
+      running: true,
+      status: "running",
+      trigger,
+      startedAt,
+      finishedAt: null,
+      totalSearchUrls: urls.length,
+      searchIndex: 0,
+      currentSearchId: null,
+      currentSearchName: null,
+      processedSearchUrls: 0,
+      error: null
+    });
+
+    try {
+      // 1단계에서는 검색 URL을 순차적으로 Pipeline에 전달하고 진행 상태만 기록합니다.
+      for (let index = 0; index < urls.length; index += 1) {
+        const item = urls[index];
+        await setAutoState({
+          searchIndex: index,
+          currentSearchId: item.id,
+          currentSearchName: item.name
+        });
+        await processSearchUrl(item);
+        await setAutoState({ processedSearchUrls: index + 1 });
+      }
+
+      return await setAutoState({
+        running: false,
+        status: "completed",
+        finishedAt: new Date().toISOString(),
+        lastSuccessfulRun: new Date().toISOString(),
+        currentSearchId: null,
+        currentSearchName: null
+      });
+    } catch (error) {
+      await setAutoState({
+        running: false,
+        status: "failed",
+        finishedAt: new Date().toISOString(),
+        error: error.message
+      });
+      throw error;
+    }
+  })();
+
+  try {
+    return await autoCollectionPromise;
+  } finally {
+    autoCollectionPromise = null;
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  ensureWeeklyAlarm().catch(console.error);
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  ensureWeeklyAlarm().catch(console.error);
+});
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === AUTO_COLLECTION_ALARM) {
+    runAutoCollection("scheduled").catch(console.error);
+  }
+});
+
+ensureWeeklyAlarm().catch(console.error);
 
 function cleanId(value) {
   return String(value || "").trim().replace(/-/g, "");
@@ -113,6 +226,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     if (message?.type === "TEST_NOTION") return testConnection();
     if (message?.type === "SAVE_NOTION_JOB") return saveJob(message.data);
+    if (message?.type === "RUN_AUTO_COLLECTION") return runAutoCollection("manual");
+    if (message?.type === "ENSURE_AUTO_ALARM") {
+      const alarm = await ensureWeeklyAlarm();
+      return { scheduledTime: alarm?.scheduledTime || null };
+    }
     throw new Error("지원하지 않는 요청입니다.");
   })().then(data => sendResponse({ ok: true, data })).catch(error => sendResponse({ ok: false, error: error.message }));
   return true;
