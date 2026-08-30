@@ -17,6 +17,14 @@ function nextMondayAtNine(now = new Date()) {
   return next;
 }
 
+function currentMondayAtNine(now = new Date()) {
+  const monday = new Date(now);
+  const daysSinceMonday = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - daysSinceMonday);
+  monday.setHours(9, 0, 0, 0);
+  return monday;
+}
+
 async function ensureWeeklyAlarm() {
   const alarm = await chrome.alarms.get(AUTO_COLLECTION_ALARM);
   if (alarm?.periodInMinutes === WEEK_IN_MINUTES) return alarm;
@@ -322,7 +330,19 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   ensureWeeklyAlarm().then(async () => {
     const saved = await chrome.storage.local.get(AUTO_STATE_KEY);
-    if (saved[AUTO_STATE_KEY]?.running) await runAutoCollection("resume");
+    const state = saved[AUTO_STATE_KEY] || {};
+    if (state.running) {
+      await runAutoCollection("resume");
+      return;
+    }
+    const now = new Date();
+    const anchor = currentMondayAtNine(now);
+    const lastSuccess = state.lastSuccessfulRun ? new Date(state.lastSuccessfulRun) : null;
+    const lastAttempt = state.lastCatchupAttempt ? new Date(state.lastCatchupAttempt) : null;
+    if (now >= anchor && (!lastSuccess || lastSuccess < anchor) && (!lastAttempt || lastAttempt < anchor)) {
+      await setAutoState({ lastCatchupAttempt: now.toISOString() });
+      await runAutoCollection("missed-schedule");
+    }
   }).catch(console.error);
 });
 
