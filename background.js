@@ -3,6 +3,7 @@ const AUTO_COLLECTION_ALARM = "weekly-saramin-auto-collection";
 const WEEK_IN_MINUTES = 7 * 24 * 60;
 const SEARCH_URLS_KEY = "saraminSearchUrls";
 const AUTO_STATE_KEY = "autoCollectionState";
+const AUTO_HISTORY_KEY = "autoCollectionHistory";
 const AUTO_LIMITS = { maxPagesPerSearch: 10, maxJobs: 100, maxRetries: 3 };
 let autoCollectionPromise = null;
 
@@ -31,6 +32,13 @@ async function setAutoState(changes) {
   const state = { ...(saved[AUTO_STATE_KEY] || {}), ...changes };
   await chrome.storage.local.set({ [AUTO_STATE_KEY]: state });
   return state;
+}
+
+async function recordAutoRun(state) {
+  const saved = await chrome.storage.local.get(AUTO_HISTORY_KEY);
+  const history = Array.isArray(saved[AUTO_HISTORY_KEY]) ? saved[AUTO_HISTORY_KEY] : [];
+  const entry = { startedAt: state.startedAt, finishedAt: state.finishedAt, status: state.status, trigger: state.trigger, totalSearchUrls: state.totalSearchUrls || 0, pages: state.pages || 0, found: state.found || 0, created: state.created || 0, updated: state.updated || 0, skipped: state.skipped || 0, failed: state.failed || 0, errors: (state.errors || []).slice(-20), error: state.error || null };
+  await chrome.storage.local.set({ [AUTO_HISTORY_KEY]: [entry, ...history].slice(0, 20) });
 }
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -174,13 +182,16 @@ async function retryJob(job) {
   throw new Error(`${lastError?.message || "처리 실패"} (${AUTO_LIMITS.maxRetries}회 시도)`);
 }
 
-async function processSearchUrl(item, context) {
+async function processSearchUrl(item, context, resume = {}) {
   return withBackgroundTab(item.url, async searchTabId => {
     for (let page = 1; page <= AUTO_LIMITS.maxPagesPerSearch; page += 1) {
       const result = await collectSearchPage(searchTabId);
       context.stats.pages += 1;
-      for (const job of result.jobs) {
+      for (let jobIndex = 0; jobIndex < result.jobs.length; jobIndex += 1) {
+        const job = result.jobs[jobIndex];
+        if (page < (resume.page || 1) || (page === (resume.page || 1) && jobIndex < (resume.jobIndex || 0))) continue;
         if (context.stats.found >= AUTO_LIMITS.maxJobs) return;
+        await setAutoState({ currentPage: page, currentJobIndex: jobIndex, processedRecIdx: [...context.processedRecIdx] });
         context.stats.found += 1;
         if (context.processedRecIdx.has(job.recIdx)) {
           context.stats.skipped += 1;
@@ -208,25 +219,28 @@ async function runAutoCollection(trigger = "manual") {
   if (autoCollectionPromise) throw new Error("자동 수집이 이미 실행 중입니다.");
 
   autoCollectionPromise = (async () => {
-    const saved = await chrome.storage.local.get(SEARCH_URLS_KEY);
+    const saved = await chrome.storage.local.get([SEARCH_URLS_KEY, AUTO_STATE_KEY]);
     const urls = (saved[SEARCH_URLS_KEY] || []).filter(item => item?.enabled);
+    const previous = saved[AUTO_STATE_KEY]?.running ? saved[AUTO_STATE_KEY] : null;
     const context = {
-      processedRecIdx: new Set(),
-      stats: { pages: 0, found: 0, created: 0, updated: 0, skipped: 0, failed: 0 },
-      errors: []
+      processedRecIdx: new Set(previous?.processedRecIdx || []),
+      stats: previous ? { pages: previous.pages || 0, found: previous.found || 0, created: previous.created || 0, updated: previous.updated || 0, skipped: previous.skipped || 0, failed: previous.failed || 0 } : { pages: 0, found: 0, created: 0, updated: 0, skipped: 0, failed: 0 },
+      errors: previous?.errors || []
     };
     const startedAt = new Date().toISOString();
     await setAutoState({
       running: true,
       status: "running",
-      trigger,
-      startedAt,
+      trigger: previous ? "resume" : trigger,
+      startedAt: previous?.startedAt || startedAt,
       finishedAt: null,
       totalSearchUrls: urls.length,
-      searchIndex: 0,
+      searchIndex: previous?.searchIndex || 0,
+      currentPage: previous?.currentPage || 1,
+      currentJobIndex: previous?.currentJobIndex || 0,
       currentSearchId: null,
       currentSearchName: null,
-      processedSearchUrls: 0,
+      processedSearchUrls: previous?.processedSearchUrls || 0,
       ...context.stats,
       errors: [],
       error: null
@@ -234,15 +248,17 @@ async function runAutoCollection(trigger = "manual") {
 
     try {
       // 활성 검색 URL과 각 검색 결과의 공고를 모두 순차적으로 처리합니다.
-      for (let index = 0; index < urls.length; index += 1) {
+      for (let index = previous ? (previous.searchIndex || 0) : 0; index < urls.length; index += 1) {
         const item = urls[index];
         await setAutoState({
           searchIndex: index,
+          currentPage: 1,
+          currentJobIndex: 0,
           currentSearchId: item.id,
           currentSearchName: item.name
         });
         try {
-          await processSearchUrl(item, context);
+          await processSearchUrl(item, context, index === (previous?.searchIndex || 0) ? { page: previous?.currentPage || 1, jobIndex: previous?.currentJobIndex || 0 } : {});
         } catch (error) {
           context.stats.failed += 1;
           context.errors.push({ recIdx: null, url: item.url, stage: "search-page", message: error.message });
@@ -251,21 +267,25 @@ async function runAutoCollection(trigger = "manual") {
         if (context.stats.found >= AUTO_LIMITS.maxJobs) break;
       }
 
-      return await setAutoState({
+      const completed = await setAutoState({
         running: false,
         status: "completed",
         finishedAt: new Date().toISOString(),
         lastSuccessfulRun: new Date().toISOString(),
+        processedRecIdx: [],
         currentSearchId: null,
         currentSearchName: null
       });
+      await recordAutoRun(completed);
+      return completed;
     } catch (error) {
-      await setAutoState({
+      const failed = await setAutoState({
         running: false,
         status: "failed",
         finishedAt: new Date().toISOString(),
         error: error.message
       });
+      await recordAutoRun(failed);
       throw error;
     }
   })();
@@ -285,7 +305,10 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  ensureWeeklyAlarm().catch(console.error);
+  ensureWeeklyAlarm().then(async () => {
+    const saved = await chrome.storage.local.get(AUTO_STATE_KEY);
+    if (saved[AUTO_STATE_KEY]?.running) await runAutoCollection("resume");
+  }).catch(console.error);
 });
 
 chrome.alarms.onAlarm.addListener(alarm => {

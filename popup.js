@@ -15,6 +15,7 @@ let extracted = null;
 const DEFAULT_DATA_SOURCE_ID = "993d726e-f27e-4c40-a843-eb6ac21ac311";
 const SEARCH_URLS_KEY = "saraminSearchUrls";
 const AUTO_STATE_KEY = "autoCollectionState";
+const AUTO_HISTORY_KEY = "autoCollectionHistory";
 const searchUrlForm = document.querySelector("#searchUrlForm");
 const searchName = document.querySelector("#searchName");
 const searchUrl = document.querySelector("#searchUrl");
@@ -22,6 +23,7 @@ const searchUrlList = document.querySelector("#searchUrlList");
 const cancelSearchEdit = document.querySelector("#cancelSearchEdit");
 const runAutoCollectionButton = document.querySelector("#runAutoCollection");
 const autoStatus = document.querySelector("#autoStatus");
+const autoHistory = document.querySelector("#autoHistory");
 let searchUrls = [];
 let editingSearchId = null;
 
@@ -111,11 +113,23 @@ function formatAutoState(state) {
   return `최근 완료 ${time} · 발견 ${state.found || 0} · 신규 ${state.created || 0} · 업데이트 ${state.updated || 0} · 중복 ${state.skipped || 0} · 실패 ${state.failed || 0}`;
 }
 
+function renderAutoHistory(history = []) {
+  autoHistory.replaceChildren();
+  history.slice(0, 5).forEach(entry => {
+    const item = document.createElement("div");
+    item.className = "history-item";
+    const time = entry.finishedAt ? new Date(entry.finishedAt).toLocaleString("ko-KR") : "진행 중";
+    item.textContent = `${time} · ${entry.status === "completed" ? "완료" : "실패"} · 발견 ${entry.found || 0} · 신규 ${entry.created || 0} · 업데이트 ${entry.updated || 0} · 실패 ${entry.failed || 0}`;
+    autoHistory.append(item);
+  });
+}
+
 async function loadAutoSettings() {
-  const saved = await chrome.storage.local.get([SEARCH_URLS_KEY, AUTO_STATE_KEY]);
+  const saved = await chrome.storage.local.get([SEARCH_URLS_KEY, AUTO_STATE_KEY, AUTO_HISTORY_KEY]);
   searchUrls = Array.isArray(saved[SEARCH_URLS_KEY]) ? saved[SEARCH_URLS_KEY] : [];
   renderSearchUrls();
   autoStatus.textContent = formatAutoState(saved[AUTO_STATE_KEY]);
+  renderAutoHistory(saved[AUTO_HISTORY_KEY]);
   await chrome.runtime.sendMessage({ type: "ENSURE_AUTO_ALARM" });
 }
 
@@ -127,6 +141,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "local" && changes[AUTO_STATE_KEY]?.newValue) {
     autoStatus.textContent = formatAutoState(changes[AUTO_STATE_KEY].newValue);
   }
+  if (areaName === "local" && changes[AUTO_HISTORY_KEY]?.newValue) renderAutoHistory(changes[AUTO_HISTORY_KEY].newValue);
 });
 
 searchUrlForm.addEventListener("submit", async event => {
