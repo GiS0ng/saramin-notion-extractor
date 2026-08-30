@@ -16,6 +16,8 @@ const DEFAULT_DATA_SOURCE_ID = "993d726e-f27e-4c40-a843-eb6ac21ac311";
 const SEARCH_URLS_KEY = "saraminSearchUrls";
 const AUTO_STATE_KEY = "autoCollectionState";
 const AUTO_HISTORY_KEY = "autoCollectionHistory";
+const AUTO_CONFIG_KEY = "autoCollectionConfig";
+const AUTO_DEFAULTS = { recentDays: 7, maxPagesPerSearch: 10, maxJobs: 100, minDelayMs: 2000, maxDelayMs: 4000, maxRetries: 3 };
 const searchUrlForm = document.querySelector("#searchUrlForm");
 const searchName = document.querySelector("#searchName");
 const searchUrl = document.querySelector("#searchUrl");
@@ -26,6 +28,7 @@ const autoStatus = document.querySelector("#autoStatus");
 const autoHistory = document.querySelector("#autoHistory");
 let searchUrls = [];
 let editingSearchId = null;
+const configFields = { recentDays: document.querySelector("#recentDays"), maxPagesPerSearch: document.querySelector("#maxPagesPerSearch"), maxJobs: document.querySelector("#maxJobs"), maxRetries: document.querySelector("#maxRetries"), minDelaySeconds: document.querySelector("#minDelaySeconds"), maxDelaySeconds: document.querySelector("#maxDelaySeconds") };
 
 async function loadNotionSettings() {
   const saved = await chrome.storage.local.get(["notionToken", "notionDataSourceId"]);
@@ -124,17 +127,38 @@ function renderAutoHistory(history = []) {
   });
 }
 
+function renderAutoConfig(config = AUTO_DEFAULTS) {
+  configFields.recentDays.value = config.recentDays;
+  configFields.maxPagesPerSearch.value = config.maxPagesPerSearch;
+  configFields.maxJobs.value = config.maxJobs;
+  configFields.maxRetries.value = config.maxRetries;
+  configFields.minDelaySeconds.value = Math.round(config.minDelayMs / 1000);
+  configFields.maxDelaySeconds.value = Math.round(config.maxDelayMs / 1000);
+}
+
 async function loadAutoSettings() {
-  const saved = await chrome.storage.local.get([SEARCH_URLS_KEY, AUTO_STATE_KEY, AUTO_HISTORY_KEY]);
+  const saved = await chrome.storage.local.get([SEARCH_URLS_KEY, AUTO_STATE_KEY, AUTO_HISTORY_KEY, AUTO_CONFIG_KEY]);
   searchUrls = Array.isArray(saved[SEARCH_URLS_KEY]) ? saved[SEARCH_URLS_KEY] : [];
   renderSearchUrls();
   autoStatus.textContent = formatAutoState(saved[AUTO_STATE_KEY]);
   renderAutoHistory(saved[AUTO_HISTORY_KEY]);
+  renderAutoConfig({ ...AUTO_DEFAULTS, ...(saved[AUTO_CONFIG_KEY] || {}) });
   await chrome.runtime.sendMessage({ type: "ENSURE_AUTO_ALARM" });
 }
 
 loadAutoSettings().catch(error => {
   autoStatus.textContent = `자동 수집 설정을 불러오지 못했습니다: ${error.message}`;
+});
+
+document.querySelector("#saveAutoConfig").addEventListener("click", async () => {
+  const values = Object.fromEntries(Object.entries(configFields).map(([key, field]) => [key, Number(field.value)]));
+  const config = { recentDays: values.recentDays, maxPagesPerSearch: values.maxPagesPerSearch, maxJobs: values.maxJobs, maxRetries: values.maxRetries, minDelayMs: values.minDelaySeconds * 1000, maxDelayMs: values.maxDelaySeconds * 1000 };
+  if (!Object.values(config).every(Number.isFinite) || config.minDelayMs > config.maxDelayMs || config.recentDays < 1 || config.maxPagesPerSearch < 1 || config.maxJobs < 1 || config.maxRetries < 1) {
+    setStatus("자동 수집 제한값을 올바르게 입력해 주세요.", true);
+    return;
+  }
+  await chrome.storage.local.set({ [AUTO_CONFIG_KEY]: config });
+  setStatus("자동 수집 제한값을 저장했습니다.");
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {

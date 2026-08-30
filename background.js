@@ -4,7 +4,8 @@ const WEEK_IN_MINUTES = 7 * 24 * 60;
 const SEARCH_URLS_KEY = "saraminSearchUrls";
 const AUTO_STATE_KEY = "autoCollectionState";
 const AUTO_HISTORY_KEY = "autoCollectionHistory";
-const AUTO_LIMITS = { maxPagesPerSearch: 10, maxJobs: 100, maxRetries: 3 };
+const AUTO_CONFIG_KEY = "autoCollectionConfig";
+const AUTO_DEFAULTS = { recentDays: 7, maxPagesPerSearch: 10, maxJobs: 100, minDelayMs: 2000, maxDelayMs: 4000, maxRetries: 3 };
 let autoCollectionPromise = null;
 
 function nextMondayAtNine(now = new Date()) {
@@ -41,8 +42,21 @@ async function recordAutoRun(state) {
   await chrome.storage.local.set({ [AUTO_HISTORY_KEY]: [entry, ...history].slice(0, 20) });
 }
 
+async function getAutoConfig() {
+  const saved = await chrome.storage.local.get(AUTO_CONFIG_KEY);
+  const value = saved[AUTO_CONFIG_KEY] || {};
+  const config = Object.fromEntries(Object.entries(AUTO_DEFAULTS).map(([key, fallback]) => [key, Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback]));
+  config.recentDays = Math.max(1, Math.min(30, config.recentDays));
+  config.maxPagesPerSearch = Math.max(1, Math.min(50, config.maxPagesPerSearch));
+  config.maxJobs = Math.max(1, Math.min(500, config.maxJobs));
+  config.maxRetries = Math.max(1, Math.min(5, config.maxRetries));
+  config.minDelayMs = Math.max(1000, Math.min(60000, config.minDelayMs));
+  config.maxDelayMs = Math.max(config.minDelayMs, Math.min(60000, config.maxDelayMs));
+  return config;
+}
+
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const requestDelay = () => delay(2000 + Math.floor(Math.random() * 2001));
+const requestDelay = config => delay(config.minDelayMs + Math.floor(Math.random() * Math.max(1, config.maxDelayMs - config.minDelayMs + 1)));
 
 async function waitForTab(tabId, timeoutMs = 30000) {
   const current = await chrome.tabs.get(tabId);
@@ -73,7 +87,7 @@ async function withBackgroundTab(url, task) {
   }
 }
 
-function scanSearchPage() {
+function scanSearchPage(recentDays = 7) {
   const links = [...document.querySelectorAll("a[href*='rec_idx=']")];
   const jobs = [];
   const seen = new Set();
@@ -90,7 +104,7 @@ function scanSearchPage() {
     if (registeredDate) {
       const registeredAt = new Date(`${registeredDate[1]}-${registeredDate[2]}-${registeredDate[3]}T00:00:00`);
       const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 7);
+      cutoff.setDate(cutoff.getDate() - recentDays);
       cutoff.setHours(0, 0, 0, 0);
       if (registeredAt < cutoff) continue;
     }
@@ -106,10 +120,10 @@ function scanSearchPage() {
   return { jobs };
 }
 
-async function collectSearchPage(tabId) {
+async function collectSearchPage(tabId, config) {
   let page = { jobs: [] };
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const [result] = await chrome.scripting.executeScript({ target: { tabId }, func: scanSearchPage });
+    const [result] = await chrome.scripting.executeScript({ target: { tabId }, func: scanSearchPage, args: [config.recentDays] });
     page = result?.result || page;
     if (page.jobs.length) break;
     await delay(1000);
@@ -170,27 +184,27 @@ async function extractAndSaveJob(job) {
   });
 }
 
-async function retryJob(job) {
+async function retryJob(job, config) {
   let lastError;
-  for (let attempt = 1; attempt <= AUTO_LIMITS.maxRetries; attempt += 1) {
+  for (let attempt = 1; attempt <= config.maxRetries; attempt += 1) {
     try { return await extractAndSaveJob(job); }
     catch (error) {
       lastError = error;
-      if (attempt < AUTO_LIMITS.maxRetries) await requestDelay();
+      if (attempt < config.maxRetries) await requestDelay(config);
     }
   }
-  throw new Error(`${lastError?.message || "처리 실패"} (${AUTO_LIMITS.maxRetries}회 시도)`);
+  throw new Error(`${lastError?.message || "처리 실패"} (${config.maxRetries}회 시도)`);
 }
 
-async function processSearchUrl(item, context, resume = {}) {
+async function processSearchUrl(item, context, config, resume = {}) {
   return withBackgroundTab(item.url, async searchTabId => {
-    for (let page = 1; page <= AUTO_LIMITS.maxPagesPerSearch; page += 1) {
-      const result = await collectSearchPage(searchTabId);
+    for (let page = 1; page <= config.maxPagesPerSearch; page += 1) {
+      const result = await collectSearchPage(searchTabId, config);
       context.stats.pages += 1;
       for (let jobIndex = 0; jobIndex < result.jobs.length; jobIndex += 1) {
         const job = result.jobs[jobIndex];
         if (page < (resume.page || 1) || (page === (resume.page || 1) && jobIndex < (resume.jobIndex || 0))) continue;
-        if (context.stats.found >= AUTO_LIMITS.maxJobs) return;
+        if (context.stats.found >= config.maxJobs) return;
         await setAutoState({ currentPage: page, currentJobIndex: jobIndex, processedRecIdx: [...context.processedRecIdx] });
         context.stats.found += 1;
         if (context.processedRecIdx.has(job.recIdx)) {
@@ -199,7 +213,7 @@ async function processSearchUrl(item, context, resume = {}) {
         }
         context.processedRecIdx.add(job.recIdx);
         try {
-          const saved = await retryJob(job);
+          const saved = await retryJob(job, config);
           if (saved.action === "created") context.stats.created += 1;
           else context.stats.updated += 1;
         } catch (error) {
@@ -207,10 +221,10 @@ async function processSearchUrl(item, context, resume = {}) {
           context.errors.push({ recIdx: job.recIdx, url: job.url, stage: "extract-or-save", message: error.message });
         }
         await setAutoState({ ...context.stats, errors: context.errors.slice(-50) });
-        await requestDelay();
+        await requestDelay(config);
       }
-      if (page === AUTO_LIMITS.maxPagesPerSearch || !(await advanceSearchPage(searchTabId, page + 1))) break;
-      await requestDelay();
+      if (page === config.maxPagesPerSearch || !(await advanceSearchPage(searchTabId, page + 1))) break;
+      await requestDelay(config);
     }
   });
 }
@@ -221,6 +235,7 @@ async function runAutoCollection(trigger = "manual") {
   autoCollectionPromise = (async () => {
     const saved = await chrome.storage.local.get([SEARCH_URLS_KEY, AUTO_STATE_KEY]);
     const urls = (saved[SEARCH_URLS_KEY] || []).filter(item => item?.enabled);
+    const config = await getAutoConfig();
     const previous = saved[AUTO_STATE_KEY]?.running ? saved[AUTO_STATE_KEY] : null;
     const context = {
       processedRecIdx: new Set(previous?.processedRecIdx || []),
@@ -258,13 +273,13 @@ async function runAutoCollection(trigger = "manual") {
           currentSearchName: item.name
         });
         try {
-          await processSearchUrl(item, context, index === (previous?.searchIndex || 0) ? { page: previous?.currentPage || 1, jobIndex: previous?.currentJobIndex || 0 } : {});
+          await processSearchUrl(item, context, config, index === (previous?.searchIndex || 0) ? { page: previous?.currentPage || 1, jobIndex: previous?.currentJobIndex || 0 } : {});
         } catch (error) {
           context.stats.failed += 1;
           context.errors.push({ recIdx: null, url: item.url, stage: "search-page", message: error.message });
         }
         await setAutoState({ processedSearchUrls: index + 1, ...context.stats, errors: context.errors.slice(-50) });
-        if (context.stats.found >= AUTO_LIMITS.maxJobs) break;
+        if (context.stats.found >= config.maxJobs) break;
       }
 
       const completed = await setAutoState({

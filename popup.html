@@ -32,6 +32,15 @@
       <summary>자동 수집 설정</summary>
       <div class="settings-body">
         <p class="hint schedule-hint">매주 월요일 오전 09:00 · 활성 URL 순차 실행</p>
+        <div class="limit-grid">
+          <label>최근 등록일(일)<input id="recentDays" type="number" min="1" max="30"></label>
+          <label>URL당 최대 페이지<input id="maxPagesPerSearch" type="number" min="1" max="50"></label>
+          <label>전체 최대 공고<input id="maxJobs" type="number" min="1" max="500"></label>
+          <label>최대 재시도<input id="maxRetries" type="number" min="1" max="5"></label>
+          <label>최소 간격(초)<input id="minDelaySeconds" type="number" min="1" max="60"></label>
+          <label>최대 간격(초)<input id="maxDelaySeconds" type="number" min="1" max="60"></label>
+        </div>
+        <button id="saveAutoConfig" class="secondary" type="button">자동 수집 제한 저장</button>
         <form id="searchUrlForm">
           <label for="searchName">검색 이름</label>
           <input id="searchName" type="text" maxlength="80" placeholder="예: AI 스마트제조" required>
