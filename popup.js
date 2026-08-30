@@ -26,6 +26,7 @@ const cancelSearchEdit = document.querySelector("#cancelSearchEdit");
 const runAutoCollectionButton = document.querySelector("#runAutoCollection");
 const autoStatus = document.querySelector("#autoStatus");
 const autoHistory = document.querySelector("#autoHistory");
+const stopAutoCollectionButton = document.querySelector("#stopAutoCollection");
 let searchUrls = [];
 let editingSearchId = null;
 const configFields = { recentDays: document.querySelector("#recentDays"), maxPagesPerSearch: document.querySelector("#maxPagesPerSearch"), maxJobs: document.querySelector("#maxJobs"), maxRetries: document.querySelector("#maxRetries"), minDelaySeconds: document.querySelector("#minDelaySeconds"), maxDelaySeconds: document.querySelector("#maxDelaySeconds") };
@@ -113,6 +114,7 @@ function formatAutoState(state) {
   if (state.running) return `실행 중 · URL ${state.processedSearchUrls || 0}/${state.totalSearchUrls || 0} · 공고 ${state.found || 0}개`;
   const time = state.finishedAt ? new Date(state.finishedAt).toLocaleString("ko-KR") : "";
   if (state.status === "failed") return `실패 · ${state.error || "알 수 없는 오류"}`;
+  if (state.status === "cancelled") return `중지됨 · ${state.found || 0}개 처리`;
   return `최근 완료 ${time} · 발견 ${state.found || 0} · 신규 ${state.created || 0} · 업데이트 ${state.updated || 0} · 중복 ${state.skipped || 0} · 실패 ${state.failed || 0}`;
 }
 
@@ -122,7 +124,8 @@ function renderAutoHistory(history = []) {
     const item = document.createElement("div");
     item.className = "history-item";
     const time = entry.finishedAt ? new Date(entry.finishedAt).toLocaleString("ko-KR") : "진행 중";
-    item.textContent = `${time} · ${entry.status === "completed" ? "완료" : "실패"} · 발견 ${entry.found || 0} · 신규 ${entry.created || 0} · 업데이트 ${entry.updated || 0} · 실패 ${entry.failed || 0}`;
+    const label = entry.status === "completed" ? "완료" : entry.status === "cancelled" ? "중지됨" : "실패";
+    item.textContent = `${time} · ${label} · 발견 ${entry.found || 0} · 신규 ${entry.created || 0} · 업데이트 ${entry.updated || 0} · 실패 ${entry.failed || 0}`;
     autoHistory.append(item);
   });
 }
@@ -141,6 +144,7 @@ async function loadAutoSettings() {
   searchUrls = Array.isArray(saved[SEARCH_URLS_KEY]) ? saved[SEARCH_URLS_KEY] : [];
   renderSearchUrls();
   autoStatus.textContent = formatAutoState(saved[AUTO_STATE_KEY]);
+  stopAutoCollectionButton.hidden = !saved[AUTO_STATE_KEY]?.running;
   renderAutoHistory(saved[AUTO_HISTORY_KEY]);
   renderAutoConfig({ ...AUTO_DEFAULTS, ...(saved[AUTO_CONFIG_KEY] || {}) });
   await chrome.runtime.sendMessage({ type: "ENSURE_AUTO_ALARM" });
@@ -163,7 +167,9 @@ document.querySelector("#saveAutoConfig").addEventListener("click", async () => 
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "local" && changes[AUTO_STATE_KEY]?.newValue) {
-    autoStatus.textContent = formatAutoState(changes[AUTO_STATE_KEY].newValue);
+    const state = changes[AUTO_STATE_KEY].newValue;
+    autoStatus.textContent = formatAutoState(state);
+    stopAutoCollectionButton.hidden = !state.running;
   }
   if (areaName === "local" && changes[AUTO_HISTORY_KEY]?.newValue) renderAutoHistory(changes[AUTO_HISTORY_KEY].newValue);
 });
@@ -223,6 +229,7 @@ runAutoCollectionButton.addEventListener("click", async () => {
   }
   if (!confirm(`활성 검색 URL ${enabledCount}개에서 최근 공고를 찾아 Notion에 실제 저장·업데이트할까요?`)) return;
   runAutoCollectionButton.disabled = true;
+  stopAutoCollectionButton.hidden = false;
   autoStatus.textContent = "자동 수집 테스트를 시작합니다…";
   try {
     const response = await chrome.runtime.sendMessage({ type: "RUN_AUTO_COLLECTION" });
@@ -235,6 +242,12 @@ runAutoCollectionButton.addEventListener("click", async () => {
   } finally {
     runAutoCollectionButton.disabled = false;
   }
+});
+
+stopAutoCollectionButton.addEventListener("click", async () => {
+  stopAutoCollectionButton.disabled = true;
+  await chrome.runtime.sendMessage({ type: "STOP_AUTO_COLLECTION" });
+  autoStatus.textContent = "중지 요청을 처리하는 중입니다…";
 });
 
 document.querySelector("#toggleToken").addEventListener("click", event => {

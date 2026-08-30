@@ -43,6 +43,11 @@ async function setAutoState(changes) {
   return state;
 }
 
+async function isCancelRequested() {
+  const saved = await chrome.storage.local.get(AUTO_STATE_KEY);
+  return Boolean(saved[AUTO_STATE_KEY]?.cancelRequested);
+}
+
 async function recordAutoRun(state) {
   const saved = await chrome.storage.local.get(AUTO_HISTORY_KEY);
   const history = Array.isArray(saved[AUTO_HISTORY_KEY]) ? saved[AUTO_HISTORY_KEY] : [];
@@ -207,9 +212,11 @@ async function retryJob(job, config) {
 async function processSearchUrl(item, context, config, resume = {}) {
   return withBackgroundTab(item.url, async searchTabId => {
     for (let page = 1; page <= config.maxPagesPerSearch; page += 1) {
+      if (await isCancelRequested()) throw new Error("사용자가 자동 수집을 중지했습니다.");
       const result = await collectSearchPage(searchTabId, config);
       context.stats.pages += 1;
       for (let jobIndex = 0; jobIndex < result.jobs.length; jobIndex += 1) {
+        if (await isCancelRequested()) throw new Error("사용자가 자동 수집을 중지했습니다.");
         const job = result.jobs[jobIndex];
         if (page < (resume.page || 1) || (page === (resume.page || 1) && jobIndex < (resume.jobIndex || 0))) continue;
         if (context.stats.found >= config.maxJobs) return;
@@ -295,16 +302,18 @@ async function runAutoCollection(trigger = "manual") {
         status: "completed",
         finishedAt: new Date().toISOString(),
         lastSuccessfulRun: new Date().toISOString(),
-        processedRecIdx: [],
+      processedRecIdx: [],
+        cancelRequested: false,
         currentSearchId: null,
         currentSearchName: null
       });
       await recordAutoRun(completed);
       return completed;
     } catch (error) {
+      const cancelled = error.message === "사용자가 자동 수집을 중지했습니다.";
       const failed = await setAutoState({
         running: false,
-        status: "failed",
+        status: cancelled ? "cancelled" : "failed",
         finishedAt: new Date().toISOString(),
         error: error.message
       });
@@ -464,12 +473,13 @@ async function saveJob(data) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  const supported = ["TEST_NOTION", "SAVE_NOTION_JOB", "RUN_AUTO_COLLECTION", "ENSURE_AUTO_ALARM"];
+  const supported = ["TEST_NOTION", "SAVE_NOTION_JOB", "RUN_AUTO_COLLECTION", "STOP_AUTO_COLLECTION", "ENSURE_AUTO_ALARM"];
   if (!supported.includes(message?.type)) return false;
   (async () => {
     if (message?.type === "TEST_NOTION") return testConnection();
     if (message?.type === "SAVE_NOTION_JOB") return saveJob(message.data);
     if (message?.type === "RUN_AUTO_COLLECTION") return runAutoCollection("manual");
+    if (message?.type === "STOP_AUTO_COLLECTION") return setAutoState({ cancelRequested: true });
     if (message?.type === "ENSURE_AUTO_ALARM") {
       const alarm = await ensureWeeklyAlarm();
       return { scheduledTime: alarm?.scheduledTime || null };

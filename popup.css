@@ -43,5 +43,6 @@ progress { width: 100%; accent-color: #157347; }
 .url-actions button { padding: 7px 5px; font-size: 11px; }
 .url-actions .danger { margin-top: 0; }
 .auto-test { margin-top: 12px; background: #157347; }
+.stop-auto { margin-top: 7px; }
 .history-list { display: grid; gap: 6px; margin-top: 10px; }
 .history-item { padding: 8px; border-radius: 8px; background: #f4f5f7; color: #626872; font-size: 11px; line-height: 1.45; }
