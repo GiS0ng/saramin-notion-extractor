@@ -105,10 +105,10 @@ function renderSearchUrls() {
 
 function formatAutoState(state) {
   if (!state?.status) return "실행 기록이 없습니다.";
-  if (state.running) return `실행 중 · ${state.processedSearchUrls || 0}/${state.totalSearchUrls || 0}개 URL`;
+  if (state.running) return `실행 중 · URL ${state.processedSearchUrls || 0}/${state.totalSearchUrls || 0} · 공고 ${state.found || 0}개`;
   const time = state.finishedAt ? new Date(state.finishedAt).toLocaleString("ko-KR") : "";
   if (state.status === "failed") return `실패 · ${state.error || "알 수 없는 오류"}`;
-  return `최근 완료 ${time} · 활성 URL ${state.processedSearchUrls || 0}개`;
+  return `최근 완료 ${time} · 발견 ${state.found || 0} · 신규 ${state.created || 0} · 업데이트 ${state.updated || 0} · 중복 ${state.skipped || 0} · 실패 ${state.failed || 0}`;
 }
 
 async function loadAutoSettings() {
@@ -121,6 +121,12 @@ async function loadAutoSettings() {
 
 loadAutoSettings().catch(error => {
   autoStatus.textContent = `자동 수집 설정을 불러오지 못했습니다: ${error.message}`;
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes[AUTO_STATE_KEY]?.newValue) {
+    autoStatus.textContent = formatAutoState(changes[AUTO_STATE_KEY].newValue);
+  }
 });
 
 searchUrlForm.addEventListener("submit", async event => {
@@ -171,6 +177,12 @@ searchUrlList.addEventListener("click", async event => {
 });
 
 runAutoCollectionButton.addEventListener("click", async () => {
+  const enabledCount = searchUrls.filter(item => item.enabled).length;
+  if (!enabledCount) {
+    setStatus("활성화된 검색 URL이 없습니다.", true);
+    return;
+  }
+  if (!confirm(`활성 검색 URL ${enabledCount}개에서 최근 공고를 찾아 Notion에 실제 저장·업데이트할까요?`)) return;
   runAutoCollectionButton.disabled = true;
   autoStatus.textContent = "자동 수집 테스트를 시작합니다…";
   try {

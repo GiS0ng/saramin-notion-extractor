@@ -3,6 +3,7 @@ const AUTO_COLLECTION_ALARM = "weekly-saramin-auto-collection";
 const WEEK_IN_MINUTES = 7 * 24 * 60;
 const SEARCH_URLS_KEY = "saraminSearchUrls";
 const AUTO_STATE_KEY = "autoCollectionState";
+const AUTO_LIMITS = { maxPagesPerSearch: 10, maxJobs: 100, maxRetries: 3 };
 let autoCollectionPromise = null;
 
 function nextMondayAtNine(now = new Date()) {
@@ -32,9 +33,175 @@ async function setAutoState(changes) {
   return state;
 }
 
-async function processSearchUrl(_item) {
-  // 다음 단계에서 검색 결과 DOM 수집을 이 함수에 연결합니다.
-  return { status: "queued" };
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const requestDelay = () => delay(2000 + Math.floor(Math.random() * 2001));
+
+async function waitForTab(tabId, timeoutMs = 30000) {
+  const current = await chrome.tabs.get(tabId);
+  if (current.status === "complete") return;
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error("페이지 로딩 시간이 초과되었습니다."));
+    }, timeoutMs);
+    function listener(updatedId, changeInfo) {
+      if (updatedId !== tabId || changeInfo.status !== "complete") return;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+async function withBackgroundTab(url, task) {
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    await waitForTab(tab.id);
+    await delay(1500);
+    return await task(tab.id);
+  } finally {
+    await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+function scanSearchPage() {
+  const links = [...document.querySelectorAll("a[href*='rec_idx=']")];
+  const jobs = [];
+  const seen = new Set();
+  for (const anchor of links) {
+    let url;
+    try { url = new URL(anchor.href, location.href); } catch (_) { continue; }
+    const recIdx = url.searchParams.get("rec_idx");
+    if (!recIdx || seen.has(recIdx) || !/\/zf_user\/jobs\/(?:relay\/)?view/.test(url.pathname)) continue;
+    const row = anchor.closest(".item_recruit, .list_item, article, li") || anchor.parentElement;
+    const rowText = (row?.innerText || "").replace(/\s+/g, " ").trim();
+    const daysAgo = rowText.match(/(\d+)일\s*전\s*등록/)?.[1];
+    if (daysAgo && Number(daysAgo) > 7) continue;
+    const registeredDate = rowText.match(/(\d{4})[.\-/](\d{2})[.\-/](\d{2})\s*등록/);
+    if (registeredDate) {
+      const registeredAt = new Date(`${registeredDate[1]}-${registeredDate[2]}-${registeredDate[3]}T00:00:00`);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 7);
+      cutoff.setHours(0, 0, 0, 0);
+      if (registeredAt < cutoff) continue;
+    }
+    seen.add(recIdx);
+    jobs.push({
+      recIdx,
+      url: `${location.origin}/zf_user/jobs/relay/view?rec_idx=${recIdx}`,
+      title: (anchor.innerText || "").replace(/\s+/g, " ").trim(),
+      listingText: rowText.slice(0, 500)
+    });
+  }
+
+  return { jobs };
+}
+
+async function collectSearchPage(tabId) {
+  let page = { jobs: [] };
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const [result] = await chrome.scripting.executeScript({ target: { tabId }, func: scanSearchPage });
+    page = result?.result || page;
+    if (page.jobs.length) break;
+    await delay(1000);
+  }
+  return page;
+}
+
+function clickNextSearchPage(nextPageNumber) {
+  const pagination = document.querySelector(".PageBox, .pagination, [class*='pagination']");
+  if (!pagination) return false;
+  const controls = [...pagination.querySelectorAll("button, a")];
+  const numbered = controls.find(control => Number((control.innerText || control.textContent || "").trim()) === nextPageNumber);
+  const next = numbered || controls.find(control => {
+    const label = `${control.getAttribute("aria-label") || ""} ${control.title || ""} ${control.innerText || ""}`.trim();
+    return /다음|next/i.test(label) && !control.disabled;
+  });
+  if (!next) return false;
+  next.click();
+  return true;
+}
+
+async function advanceSearchPage(tabId, nextPageNumber) {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: clickNextSearchPage,
+    args: [nextPageNumber]
+  });
+  if (!result?.result) return false;
+  await delay(2000);
+  return true;
+}
+
+async function ensureOffscreenDocument() {
+  if (await chrome.offscreen.hasDocument()) return;
+  await chrome.offscreen.createDocument({
+    url: "offscreen.html",
+    reasons: ["WORKERS"],
+    justification: "이미지형 채용공고를 로컬 Tesseract OCR로 처리합니다."
+  });
+}
+
+async function applyOcrIfNeeded(tabId, data) {
+  if (!data?._needsOcr || !data?._ocrImages?.length) return data;
+  await ensureOffscreenDocument();
+  const ocr = await chrome.runtime.sendMessage({ type: "OFFSCREEN_OCR", imageUrls: data._ocrImages });
+  if (!ocr?.ok) throw new Error(ocr?.error || "OCR 처리에 실패했습니다.");
+  const parsed = await chrome.tabs.sendMessage(tabId, { type: "PARSE_OCR_TEXT", data, ocrText: ocr.text }, { frameId: 0 });
+  if (!parsed?.ok) throw new Error(parsed?.error || "OCR 결과를 분류하지 못했습니다.");
+  return parsed.data;
+}
+
+async function extractAndSaveJob(job) {
+  return withBackgroundTab(job.url, async tabId => {
+    let extracted = await chrome.tabs.sendMessage(tabId, { type: "SCAN_SARAMIN_JOB" }, { frameId: 0 });
+    if (!extracted?.ok) throw new Error(extracted?.error || "상세 공고를 추출하지 못했습니다.");
+    extracted = await applyOcrIfNeeded(tabId, extracted.data);
+    return saveJob(extracted);
+  });
+}
+
+async function retryJob(job) {
+  let lastError;
+  for (let attempt = 1; attempt <= AUTO_LIMITS.maxRetries; attempt += 1) {
+    try { return await extractAndSaveJob(job); }
+    catch (error) {
+      lastError = error;
+      if (attempt < AUTO_LIMITS.maxRetries) await requestDelay();
+    }
+  }
+  throw new Error(`${lastError?.message || "처리 실패"} (${AUTO_LIMITS.maxRetries}회 시도)`);
+}
+
+async function processSearchUrl(item, context) {
+  return withBackgroundTab(item.url, async searchTabId => {
+    for (let page = 1; page <= AUTO_LIMITS.maxPagesPerSearch; page += 1) {
+      const result = await collectSearchPage(searchTabId);
+      context.stats.pages += 1;
+      for (const job of result.jobs) {
+        if (context.stats.found >= AUTO_LIMITS.maxJobs) return;
+        context.stats.found += 1;
+        if (context.processedRecIdx.has(job.recIdx)) {
+          context.stats.skipped += 1;
+          continue;
+        }
+        context.processedRecIdx.add(job.recIdx);
+        try {
+          const saved = await retryJob(job);
+          if (saved.action === "created") context.stats.created += 1;
+          else context.stats.updated += 1;
+        } catch (error) {
+          context.stats.failed += 1;
+          context.errors.push({ recIdx: job.recIdx, url: job.url, stage: "extract-or-save", message: error.message });
+        }
+        await setAutoState({ ...context.stats, errors: context.errors.slice(-50) });
+        await requestDelay();
+      }
+      if (page === AUTO_LIMITS.maxPagesPerSearch || !(await advanceSearchPage(searchTabId, page + 1))) break;
+      await requestDelay();
+    }
+  });
 }
 
 async function runAutoCollection(trigger = "manual") {
@@ -43,6 +210,11 @@ async function runAutoCollection(trigger = "manual") {
   autoCollectionPromise = (async () => {
     const saved = await chrome.storage.local.get(SEARCH_URLS_KEY);
     const urls = (saved[SEARCH_URLS_KEY] || []).filter(item => item?.enabled);
+    const context = {
+      processedRecIdx: new Set(),
+      stats: { pages: 0, found: 0, created: 0, updated: 0, skipped: 0, failed: 0 },
+      errors: []
+    };
     const startedAt = new Date().toISOString();
     await setAutoState({
       running: true,
@@ -55,11 +227,13 @@ async function runAutoCollection(trigger = "manual") {
       currentSearchId: null,
       currentSearchName: null,
       processedSearchUrls: 0,
+      ...context.stats,
+      errors: [],
       error: null
     });
 
     try {
-      // 1단계에서는 검색 URL을 순차적으로 Pipeline에 전달하고 진행 상태만 기록합니다.
+      // 활성 검색 URL과 각 검색 결과의 공고를 모두 순차적으로 처리합니다.
       for (let index = 0; index < urls.length; index += 1) {
         const item = urls[index];
         await setAutoState({
@@ -67,8 +241,14 @@ async function runAutoCollection(trigger = "manual") {
           currentSearchId: item.id,
           currentSearchName: item.name
         });
-        await processSearchUrl(item);
-        await setAutoState({ processedSearchUrls: index + 1 });
+        try {
+          await processSearchUrl(item, context);
+        } catch (error) {
+          context.stats.failed += 1;
+          context.errors.push({ recIdx: null, url: item.url, stage: "search-page", message: error.message });
+        }
+        await setAutoState({ processedSearchUrls: index + 1, ...context.stats, errors: context.errors.slice(-50) });
+        if (context.stats.found >= AUTO_LIMITS.maxJobs) break;
       }
 
       return await setAutoState({
@@ -94,6 +274,9 @@ async function runAutoCollection(trigger = "manual") {
     return await autoCollectionPromise;
   } finally {
     autoCollectionPromise = null;
+    if (await chrome.offscreen.hasDocument().catch(() => false)) {
+      await chrome.offscreen.closeDocument().catch(() => {});
+    }
   }
 }
 
@@ -223,6 +406,8 @@ async function saveJob(data) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  const supported = ["TEST_NOTION", "SAVE_NOTION_JOB", "RUN_AUTO_COLLECTION", "ENSURE_AUTO_ALARM"];
+  if (!supported.includes(message?.type)) return false;
   (async () => {
     if (message?.type === "TEST_NOTION") return testConnection();
     if (message?.type === "SAVE_NOTION_JOB") return saveJob(message.data);
@@ -231,7 +416,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const alarm = await ensureWeeklyAlarm();
       return { scheduledTime: alarm?.scheduledTime || null };
     }
-    throw new Error("지원하지 않는 요청입니다.");
   })().then(data => sendResponse({ ok: true, data })).catch(error => sendResponse({ ok: false, error: error.message }));
   return true;
 });
