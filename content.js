@@ -2,8 +2,7 @@
   if (globalThis.__saraminNotionExtractorLoaded) return;
   globalThis.__saraminNotionExtractorLoaded = true;
 
-  const clean = (value = "") => value.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-  const oneLine = (value = "") => clean(value).replace(/\s*\n\s*/g, " ");
+  const { clean, oneLine, section, detectSkills } = SaraminCore;
 
   function definitionMap(root = document) {
     const map = {};
@@ -48,23 +47,6 @@
     const clone = area.cloneNode(true);
     clone.querySelectorAll("script, style, iframe, video, button").forEach((el) => el.remove());
     return { text: clean(clone.innerText.replace(/^상세요강\s*/, "")), imageUrls };
-  }
-
-  function section(text, startWords, endWords) {
-    const starts = startWords.map((word) => ({ word, index: text.indexOf(word) })).filter((x) => x.index >= 0).sort((a, b) => a.index - b.index);
-    if (!starts.length) return "";
-    const start = starts[0].index + starts[0].word.length;
-    const ends = endWords.map((word) => text.indexOf(word, start)).filter((index) => index >= 0);
-    const end = ends.length ? Math.min(...ends) : text.length;
-    return clean(text.slice(start, end)
-      .replace(/^[\]\[(){}\s:：📌📝🏠🎁🚀🛎️]+/, "")
-      .replace(/[📋🏠🎁🚀🛎️\s]+$/, ""));
-  }
-
-  function detectSkills(text) {
-    const catalog = ["Python", "SQL", "Excel", "Java", "C", "Linux", "Docker", "Git", "Power BI", "MES", "ERP", "PLC"];
-    const aliases = { "Excel": /Excel|엑셀|스프레드\s*시트/i, "Power BI": /Power\s*BI|BI\s*툴/i, "C": /(^|[^A-Za-z])C([^A-Za-z]|$)/ };
-    return catalog.filter((skill) => (aliases[skill] || new RegExp(`(^|[^A-Za-z])${skill.replace(" ", "\\s*")}([^A-Za-z]|$)`, "i")).test(text));
   }
 
   function deadline(root) {

@@ -1,0 +1,8 @@
+주요업무
+RAG 서비스와 Python 추론 API를 개발합니다.
+지원자격
+Hugging Face 모델 사용 경험과 Git 협업 경험
+우대사항
+Ollama 또는 vLLM 서빙 경험
+근무조건
+주 5일 근무
