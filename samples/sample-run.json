@@ -1,0 +1,12 @@
+{
+  "status": "completed",
+  "trigger": "manual",
+  "totalSearchUrls": 2,
+  "pages": 4,
+  "found": 12,
+  "created": 8,
+  "updated": 3,
+  "skipped": 1,
+  "failed": 0,
+  "errors": []
+}

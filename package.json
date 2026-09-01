@@ -1,12 +1,13 @@
 {
   "name": "saramin-notion-extractor",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "private": true,
   "description": "사람인 채용공고를 구조화해 Notion에 저장하는 무빌드 Chrome 확장 프로그램",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "node --check core.js && node --check workflow.js && node --check content.js && node --check background.js && node --check popup.js && node --check offscreen.js && node -e \"JSON.parse(require('fs').readFileSync('manifest.json'))\""
+    "check": "node --check core.js && node --check workflow.js && node --check content.js && node --check background.js && node --check popup.js && node --check offscreen.js && node --check scripts/package-extension.mjs && node -e \"JSON.parse(require('fs').readFileSync('manifest.json'))\"",
+    "package": "node scripts/package-extension.mjs"
   },
   "devDependencies": {
     "jsdom": "^26.1.0",
