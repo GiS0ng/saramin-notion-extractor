@@ -86,4 +86,14 @@ describe("주간 예약 계산", () => {
     const result = core.nextWeeklyOccurrence(mondayNine, new Date(2026, 8, 6, 12, 0));
     expect(result).toEqual(new Date(2026, 8, 7, 9, 0));
   });
+
+  it("설정 범위를 보정하고 비활성 상태를 유지한다", () => {
+    expect(core.normalizeScheduleConfig({ scheduleEnabled: false, weekday: 9, hour: -1, minute: 80 }))
+      .toEqual({ scheduleEnabled: false, weekday: 7, hour: 0, minute: 59 });
+  });
+
+  it("이번 주 예약 시각을 현지 시간으로 계산한다", () => {
+    const result = core.currentWeeklyAnchor(mondayNine, new Date(2026, 8, 10, 12, 0));
+    expect(result).toEqual(new Date(2026, 8, 7, 9, 0));
+  });
 });

@@ -1,11 +1,24 @@
 importScripts("core.js", "workflow.js");
 
 const NOTION_VERSION = "2026-03-11";
+const AUTO_COLLECTION_ALARM = "weekly-saramin-auto-collection";
+const LEGACY_ALARM_NAMES = ["saramin-weekly-auto-collection"];
 const SEARCH_URLS_KEY = "saraminSearchUrls";
 const AUTO_STATE_KEY = "autoCollectionState";
 const AUTO_HISTORY_KEY = "autoCollectionHistory";
 const AUTO_CONFIG_KEY = "autoCollectionConfig";
-const AUTO_DEFAULTS = { recentDays: 7, maxPagesPerSearch: 10, maxJobs: 100, minDelayMs: 2000, maxDelayMs: 4000, maxRetries: 3 };
+const AUTO_DEFAULTS = {
+  recentDays: 7,
+  maxPagesPerSearch: 10,
+  maxJobs: 100,
+  minDelayMs: 2000,
+  maxDelayMs: 4000,
+  maxRetries: 3,
+  scheduleEnabled: true,
+  weekday: 1,
+  hour: 9,
+  minute: 0
+};
 let autoCollectionPromise = null;
 const { notionProperties } = SaraminCore;
 const {
@@ -39,7 +52,12 @@ async function recordAutoRun(state) {
 async function getAutoConfig() {
   const saved = await chrome.storage.local.get(AUTO_CONFIG_KEY);
   const value = saved[AUTO_CONFIG_KEY] || {};
-  const config = Object.fromEntries(Object.entries(AUTO_DEFAULTS).map(([key, fallback]) => [key, Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback]));
+  const numberKeys = ["recentDays", "maxPagesPerSearch", "maxJobs", "minDelayMs", "maxDelayMs", "maxRetries"];
+  const config = Object.fromEntries(numberKeys.map(key => [
+    key,
+    Number.isFinite(Number(value[key])) ? Number(value[key]) : AUTO_DEFAULTS[key]
+  ]));
+  Object.assign(config, SaraminCore.normalizeScheduleConfig(value));
   config.recentDays = Math.max(1, Math.min(30, config.recentDays));
   config.maxPagesPerSearch = Math.max(1, Math.min(50, config.maxPagesPerSearch));
   config.maxJobs = Math.max(1, Math.min(500, config.maxJobs));
@@ -47,6 +65,70 @@ async function getAutoConfig() {
   config.minDelayMs = Math.max(1000, Math.min(60000, config.minDelayMs));
   config.maxDelayMs = Math.max(config.minDelayMs, Math.min(60000, config.maxDelayMs));
   return config;
+}
+
+async function saveAutoConfig(value) {
+  const before = await chrome.storage.local.get([AUTO_CONFIG_KEY, AUTO_STATE_KEY]);
+  const prior = before[AUTO_CONFIG_KEY] || {};
+  const merged = { ...(await getAutoConfig()), ...(value || {}) };
+  const schedule = SaraminCore.normalizeScheduleConfig(merged);
+  const numeric = {
+    recentDays: Math.max(1, Math.min(30, Number(merged.recentDays))),
+    maxPagesPerSearch: Math.max(1, Math.min(50, Number(merged.maxPagesPerSearch))),
+    maxJobs: Math.max(1, Math.min(500, Number(merged.maxJobs))),
+    maxRetries: Math.max(1, Math.min(5, Number(merged.maxRetries))),
+    minDelayMs: Math.max(1000, Math.min(60000, Number(merged.minDelayMs))),
+    maxDelayMs: Math.max(1000, Math.min(60000, Number(merged.maxDelayMs)))
+  };
+  if (!Object.values(numeric).every(Number.isFinite) || numeric.minDelayMs > numeric.maxDelayMs) {
+    throw new Error("자동 수집 제한값을 올바르게 입력해 주세요.");
+  }
+  const config = { ...numeric, ...schedule };
+  await chrome.storage.local.set({ [AUTO_CONFIG_KEY]: config });
+  const scheduleChanged = prior.scheduleEnabled !== config.scheduleEnabled
+    || Number(prior.weekday) !== config.weekday
+    || Number(prior.hour) !== config.hour
+    || Number(prior.minute) !== config.minute;
+  if (!before[AUTO_STATE_KEY]?.scheduleActivatedAt || scheduleChanged) {
+    await setAutoState({ scheduleActivatedAt: new Date().toISOString() });
+  }
+  const alarm = await ensureWeeklyAlarm(config);
+  return { config, scheduledTime: alarm?.scheduledTime || null };
+}
+
+async function ensureWeeklyAlarm(config = null) {
+  const current = config || await getAutoConfig();
+  await Promise.all(LEGACY_ALARM_NAMES.map(name => chrome.alarms.clear(name)));
+  await chrome.alarms.clear(AUTO_COLLECTION_ALARM);
+  if (!current.scheduleEnabled) return null;
+  const when = SaraminCore.nextWeeklyOccurrence(current, new Date()).getTime();
+  chrome.alarms.create(AUTO_COLLECTION_ALARM, { when });
+  return chrome.alarms.get(AUTO_COLLECTION_ALARM);
+}
+
+async function runStartupCollection() {
+  const saved = await chrome.storage.local.get(AUTO_STATE_KEY);
+  const state = saved[AUTO_STATE_KEY] || {};
+  if (state.running) {
+    await runAutoCollection("resume");
+    await ensureWeeklyAlarm();
+    return;
+  }
+  const config = await getAutoConfig();
+  if (!config.scheduleEnabled) {
+    await ensureWeeklyAlarm(config);
+    return;
+  }
+  const now = new Date();
+  const anchor = SaraminCore.currentWeeklyAnchor(config, now);
+  const lastSuccess = state.lastScheduledSuccess ? new Date(state.lastScheduledSuccess) : null;
+  const lastAttempt = state.lastCatchupAttempt ? new Date(state.lastCatchupAttempt) : null;
+  const activatedAt = state.scheduleActivatedAt ? new Date(state.scheduleActivatedAt) : now;
+  if (anchor >= activatedAt && now >= anchor && (!lastSuccess || lastSuccess < anchor) && (!lastAttempt || lastAttempt < anchor)) {
+    await setAutoState({ lastCatchupAttempt: now.toISOString() });
+    await runAutoCollection("missed-schedule");
+  }
+  await ensureWeeklyAlarm(config);
 }
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -249,6 +331,7 @@ async function runAutoCollection(trigger = "manual") {
     }
     const config = await getAutoConfig();
     const previous = saved[AUTO_STATE_KEY]?.running ? saved[AUTO_STATE_KEY] : null;
+    const runTrigger = previous?.trigger || trigger;
     const context = {
       processedRecIdx: new Set(previous?.processedRecIdx || []),
       stats: previous ? { pages: previous.pages || 0, found: previous.found || 0, created: previous.created || 0, updated: previous.updated || 0, skipped: previous.skipped || 0, failed: previous.failed || 0 } : { pages: 0, found: 0, created: 0, updated: 0, skipped: 0, failed: 0 },
@@ -258,7 +341,7 @@ async function runAutoCollection(trigger = "manual") {
     await setAutoState({
       running: true,
       status: "running",
-      trigger: previous ? "resume" : trigger,
+      trigger: runTrigger,
       startedAt: previous?.startedAt || startedAt,
       finishedAt: null,
       totalSearchUrls: urls.length,
@@ -295,11 +378,13 @@ async function runAutoCollection(trigger = "manual") {
         if (context.stats.found >= config.maxJobs) break;
       }
 
+      const finishedAt = new Date().toISOString();
       const completed = await setAutoState({
         running: false,
         status: "completed",
-        finishedAt: new Date().toISOString(),
-        lastSuccessfulRun: new Date().toISOString(),
+        finishedAt,
+        lastSuccessfulRun: finishedAt,
+        ...(["scheduled", "missed-schedule"].includes(runTrigger) ? { lastScheduledSuccess: finishedAt } : {}),
         processedRecIdx: [],
         cancelRequested: false,
         currentSearchId: null,
@@ -331,11 +416,18 @@ async function runAutoCollection(trigger = "manual") {
 }
 
 chrome.runtime.onStartup.addListener(() => {
-  (async () => {
-    const saved = await chrome.storage.local.get(AUTO_STATE_KEY);
-    const state = saved[AUTO_STATE_KEY] || {};
-    if (state.running) await runAutoCollection("resume");
-  })().catch(console.error);
+  runStartupCollection().catch(console.error);
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  saveAutoConfig({}).catch(console.error);
+});
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== AUTO_COLLECTION_ALARM) return;
+  runAutoCollection("scheduled")
+    .catch(console.error)
+    .finally(() => ensureWeeklyAlarm().catch(console.error));
 });
 
 function cleanId(value) {
@@ -407,13 +499,26 @@ async function saveJob(data) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  const supported = ["TEST_NOTION", "SAVE_NOTION_JOB", "RUN_AUTO_COLLECTION", "STOP_AUTO_COLLECTION"];
+  const supported = [
+    "TEST_NOTION",
+    "SAVE_NOTION_JOB",
+    "RUN_AUTO_COLLECTION",
+    "STOP_AUTO_COLLECTION",
+    "SAVE_AUTO_CONFIG",
+    "GET_AUTO_SCHEDULE"
+  ];
   if (!supported.includes(message?.type)) return false;
   (async () => {
     if (message?.type === "TEST_NOTION") return testConnection();
     if (message?.type === "SAVE_NOTION_JOB") return saveJob(message.data);
     if (message?.type === "RUN_AUTO_COLLECTION") return runAutoCollection("manual");
     if (message?.type === "STOP_AUTO_COLLECTION") return setAutoState({ cancelRequested: true });
+    if (message?.type === "SAVE_AUTO_CONFIG") return saveAutoConfig(message.config);
+    if (message?.type === "GET_AUTO_SCHEDULE") {
+      const config = await getAutoConfig();
+      const alarm = await ensureWeeklyAlarm(config);
+      return { config, scheduledTime: alarm?.scheduledTime || null };
+    }
   })().then(data => sendResponse({ ok: true, data })).catch(error => sendResponse({ ok: false, error: error.message }));
   return true;
 });

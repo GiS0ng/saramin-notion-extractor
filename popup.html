@@ -31,7 +31,19 @@
     <details id="autoSettings">
       <summary>자동 수집 설정</summary>
       <div class="settings-body">
-        <p class="hint schedule-hint">활성 검색 URL을 수동으로 순차 실행합니다.</p>
+        <div class="schedule-grid">
+          <label class="schedule-toggle"><input id="scheduleEnabled" type="checkbox"> 주 1회 자동 실행</label>
+          <label>요일
+            <select id="scheduleWeekday">
+              <option value="1">월요일</option><option value="2">화요일</option>
+              <option value="3">수요일</option><option value="4">목요일</option>
+              <option value="5">금요일</option><option value="6">토요일</option>
+              <option value="7">일요일</option>
+            </select>
+          </label>
+          <label>시각<input id="scheduleTime" type="time" value="09:00"></label>
+        </div>
+        <p id="nextScheduledRun" class="hint schedule-hint">브라우저 현지 시간 기준 · 다음 실행 확인 중…</p>
         <div class="limit-grid">
           <label>최근 등록일(일)<input id="recentDays" type="number" min="1" max="30"></label>
           <label>URL당 최대 페이지<input id="maxPagesPerSearch" type="number" min="1" max="50"></label>
