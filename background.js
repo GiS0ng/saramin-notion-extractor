@@ -27,7 +27,8 @@ const {
   shouldRetry,
   isFatal,
   publicError,
-  nextCursor
+  nextCursor,
+  jobDecision
 } = SaraminWorkflow;
 
 async function setAutoState(changes) {
@@ -267,10 +268,11 @@ async function processSearchUrl(item, context, config, resume = {}) {
         if (await isCancelRequested()) throw new CancellationError();
         const job = result.jobs[jobIndex];
         if (page < (resume.page || 1) || (page === (resume.page || 1) && jobIndex < (resume.nextJobIndex || 0))) continue;
-        if (context.stats.found >= config.maxJobs) return;
+        const decision = jobDecision(job.recIdx, context.processedRecIdx, context.stats.found, config.maxJobs);
+        if (decision === "limit") return;
         await setAutoState({ currentPage: page, nextJobIndex: jobIndex, processedRecIdx: [...context.processedRecIdx] });
         context.stats.found += 1;
-        if (context.processedRecIdx.has(job.recIdx)) {
+        if (decision === "duplicate") {
           context.stats.skipped += 1;
           const cursor = nextCursor(page, jobIndex, result.jobs.length);
           await setAutoState({ ...cursor, ...context.stats, processedRecIdx: [...context.processedRecIdx] });
@@ -351,6 +353,7 @@ async function runAutoCollection(trigger = "manual") {
       currentSearchId: null,
       currentSearchName: null,
       processedSearchUrls: previous?.processedSearchUrls || 0,
+      cancelRequested: false,
       ...context.stats,
       errors: context.errors.slice(-20),
       error: null
