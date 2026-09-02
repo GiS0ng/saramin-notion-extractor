@@ -3,5 +3,6 @@ coverage/
 dist/
 release/
 *.zip
+docs/demo-frame-*.png
 CODEX_HANDOF.md
 CODEX_HANDOF.md:Zone.Identifier

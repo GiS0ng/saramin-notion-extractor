@@ -364,7 +364,7 @@ scanButton.addEventListener("click", async () => {
     try {
       response = await chrome.tabs.sendMessage(tab.id, { type: "SCAN_SARAMIN_JOB" }, { frameId: 0 });
     } catch (_) {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["core.js", "content.js"] });
       response = await chrome.tabs.sendMessage(tab.id, { type: "SCAN_SARAMIN_JOB" }, { frameId: 0 });
     }
     if (!response?.ok) throw new Error(response?.error || "공고를 추출하지 못했습니다.");
