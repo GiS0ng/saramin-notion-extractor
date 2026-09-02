@@ -28,6 +28,48 @@
         <p class="hint">토큰은 이 브라우저의 확장 프로그램 저장소에만 보관됩니다.</p>
       </div>
     </details>
+    <details id="autoSettings">
+      <summary>자동 수집 설정</summary>
+      <div class="settings-body">
+        <div class="schedule-grid">
+          <label class="schedule-toggle"><input id="scheduleEnabled" type="checkbox"> 주 1회 자동 실행</label>
+          <label>요일
+            <select id="scheduleWeekday">
+              <option value="1">월요일</option><option value="2">화요일</option>
+              <option value="3">수요일</option><option value="4">목요일</option>
+              <option value="5">금요일</option><option value="6">토요일</option>
+              <option value="7">일요일</option>
+            </select>
+          </label>
+          <label>시각<input id="scheduleTime" type="time" value="09:00"></label>
+        </div>
+        <p id="nextScheduledRun" class="hint schedule-hint">브라우저 현지 시간 기준 · 다음 실행 확인 중…</p>
+        <div class="limit-grid">
+          <label>최근 등록일(일)<input id="recentDays" type="number" min="1" max="30"></label>
+          <label>URL당 최대 페이지<input id="maxPagesPerSearch" type="number" min="1" max="50"></label>
+          <label>전체 최대 공고<input id="maxJobs" type="number" min="1" max="500"></label>
+          <label>최대 재시도<input id="maxRetries" type="number" min="1" max="5"></label>
+          <label>최소 간격(초)<input id="minDelaySeconds" type="number" min="1" max="60"></label>
+          <label>최대 간격(초)<input id="maxDelaySeconds" type="number" min="1" max="60"></label>
+        </div>
+        <button id="saveAutoConfig" class="secondary" type="button">자동 수집 제한 저장</button>
+        <form id="searchUrlForm">
+          <label for="searchName">검색 이름</label>
+          <input id="searchName" type="text" maxlength="80" placeholder="예: AI 스마트제조" required>
+          <label for="searchUrl">사람인 검색 URL</label>
+          <input id="searchUrl" type="url" placeholder="https://www.saramin.co.kr/..." required>
+          <div class="settings-actions">
+            <button id="saveSearchUrl" type="submit">URL 추가</button>
+            <button id="cancelSearchEdit" class="secondary" type="button" hidden>수정 취소</button>
+          </div>
+        </form>
+        <div id="searchUrlList" class="url-list"></div>
+        <button id="runAutoCollection" class="auto-test" type="button">지금 자동 수집 테스트</button>
+        <button id="stopAutoCollection" class="danger stop-auto" type="button" hidden>자동 수집 중지</button>
+        <p id="autoStatus" class="hint" role="status">실행 기록이 없습니다.</p>
+        <div id="autoHistory" class="history-list"></div>
+      </div>
+    </details>
     <button id="scan" type="button">페이지 스캔</button>
     <p id="status" role="status">사람인 공고 페이지에서 실행해 주세요.</p>
     <section id="result" hidden>

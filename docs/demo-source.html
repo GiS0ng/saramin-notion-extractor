@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>사람인 추출기 데모</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 960px; height: 540px; overflow: hidden; background: #f4f6fb; color: #172033; font-family: Arial, "Malgun Gothic", sans-serif; }
+    main { display: grid; grid-template-columns: 280px 1fr; gap: 24px; width: 100%; height: 100%; padding: 32px; }
+    aside, section { border: 1px solid #dbe1ec; border-radius: 18px; background: white; box-shadow: 0 12px 32px #2b3b5a18; }
+    aside { padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 23px; }
+    .sub { margin: 0 0 28px; color: #6e778a; font-size: 13px; }
+    .step { display: flex; gap: 10px; align-items: center; margin: 14px 0; color: #8991a1; font-size: 14px; }
+    .step b { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: #edf0f7; }
+    .step.active { color: #3341c6; font-weight: 700; }
+    .step.active b { background: #4b55e7; color: white; }
+    section { position: relative; padding: 32px; }
+    .tag { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #e8eaff; color: #3039b8; font-size: 12px; font-weight: 700; }
+    h2 { margin: 18px 0 8px; font-size: 28px; }
+    .lead { margin: 0 0 24px; color: #687187; }
+    .card { margin-top: 14px; padding: 18px; border: 1px solid #e0e5ee; border-radius: 13px; }
+    .row { display: flex; justify-content: space-between; gap: 20px; margin: 10px 0; font-size: 14px; }
+    .row span:first-child { color: #788196; }
+    .ok { color: #157347; font-weight: 700; }
+    .ocr { color: #9b5b00; font-weight: 700; }
+    .bar { width: 100%; height: 10px; margin-top: 20px; overflow: hidden; border-radius: 999px; background: #e9edf4; }
+    .bar i { display: block; height: 100%; background: #4b55e7; }
+    footer { position: absolute; right: 30px; bottom: 24px; color: #8991a1; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <aside>
+      <h1>사람인 → Notion</h1>
+      <p class="sub">개인정보를 가린 시연 화면</p>
+      <div class="step" data-step="1"><b>1</b>검색 URL 순차 탐색</div>
+      <div class="step" data-step="2"><b>2</b>텍스트·이미지 추출</div>
+      <div class="step" data-step="3"><b>3</b>Notion upsert</div>
+      <div class="step" data-step="4"><b>4</b>실행 결과 확인</div>
+    </aside>
+    <section id="scene"></section>
+  </main>
+  <script>
+    const step = Math.max(1, Math.min(4, Number(new URLSearchParams(location.search).get("step")) || 1));
+    document.querySelector(`[data-step="${step}"]`).classList.add("active");
+    const scenes = {
+      1: `<span class="tag">수동 일괄수집</span><h2>활성 검색 URL 2개 탐색</h2><p class="lead">최근 7일 공고만 페이지별로 읽습니다.</p><div class="card"><div class="row"><span>AI·스마트제조</span><span class="ok">활성</span></div><div class="row"><span>데이터 엔지니어</span><span class="ok">활성</span></div><div class="bar"><i style="width:26%"></i></div></div>`,
+      2: `<span class="tag">로컬 처리</span><h2>텍스트와 이미지 공고 구조화</h2><p class="lead">이미지형은 브라우저 안에서 OCR한 뒤 같은 필드로 분류합니다.</p><div class="card"><div class="row"><span>텍스트 상세 공고</span><span class="ok">DOM 추출 완료</span></div><div class="row"><span>이미지 상세 공고</span><span class="ocr">OCR 100%</span></div><div class="row"><span>기술스택</span><span>Python · SQL · MES</span></div></div>`,
+      3: `<span class="tag">중복 방지</span><h2>공고링크 기준 Notion upsert</h2><p class="lead">같은 rec_idx는 새 페이지를 만들지 않고 기존 항목을 갱신합니다.</p><div class="card"><div class="row"><span>샘플테크 / 데이터 엔지니어</span><span class="ok">새로 생성</span></div><div class="row"><span>예시제조 / AI 엔지니어</span><span class="ok">기존 항목 업데이트</span></div></div>`,
+      4: `<span class="tag">완료</span><h2>실행 이력과 다음 예약 확인</h2><p class="lead">민감한 토큰·ID·Notion URL은 기록하지 않습니다.</p><div class="card"><div class="row"><span>상태</span><span class="ok">completed</span></div><div class="row"><span>발견 / 신규 / 업데이트 / 실패</span><span>12 / 8 / 3 / 0</span></div><div class="row"><span>다음 실행</span><span>월요일 09:00 · 현지 시간</span></div></div>`
+    };
+    document.querySelector("#scene").innerHTML = scenes[step] + `<footer>v1.0.0 · sanitized portfolio demo · ${step}/4</footer>`;
+  </script>
+</body>
+</html>
