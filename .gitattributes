@@ -1,0 +1,3 @@
+ocr/** linguist-vendored
+*.wasm binary
+*.traineddata.gz binary

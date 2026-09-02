@@ -27,7 +27,7 @@
         "https://www.saramin.co.kr/zf_user/jobs/view*",
         "https://www.saramin.co.kr/zf_user/jobs/relay/view*"
       ],
-      "js": ["content.js"],
+      "js": ["core.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

@@ -12,12 +12,11 @@ const dataSourceId = document.querySelector("#dataSourceId");
 const notionSettings = document.querySelector("#notionSettings");
 const saveNotionButton = document.querySelector("#saveNotion");
 let extracted = null;
-const DEFAULT_DATA_SOURCE_ID = "993d726e-f27e-4c40-a843-eb6ac21ac311";
 
 async function loadNotionSettings() {
   const saved = await chrome.storage.local.get(["notionToken", "notionDataSourceId"]);
   notionToken.value = saved.notionToken || "";
-  dataSourceId.value = saved.notionDataSourceId || DEFAULT_DATA_SOURCE_ID;
+  dataSourceId.value = saved.notionDataSourceId || "";
 }
 
 async function persistNotionSettings() {

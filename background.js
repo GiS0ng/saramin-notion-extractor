@@ -1,50 +1,10 @@
+importScripts("core.js");
+
 const NOTION_VERSION = "2026-03-11";
+const { notionProperties } = SaraminCore;
 
 function cleanId(value) {
   return String(value || "").trim().replace(/-/g, "");
-}
-
-function canonicalUrl(value) {
-  const raw = String(value || "").trim();
-  const markdown = raw.match(/^\[[^\]]*\]\((https?:\/\/[^)]+)\)$/);
-  const candidate = markdown ? markdown[1] : raw;
-  try {
-    const url = new URL(candidate);
-    const recIdx = url.searchParams.get("rec_idx");
-    return recIdx ? `https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=${recIdx}` : candidate;
-  } catch (_) {
-    return candidate;
-  }
-}
-
-function richText(value) {
-  const text = String(value || "");
-  const chunks = [];
-  for (let i = 0; i < text.length && chunks.length < 100; i += 2000) {
-    chunks.push({ type: "text", text: { content: text.slice(i, i + 2000) } });
-  }
-  return { rich_text: chunks };
-}
-
-function notionProperties(data) {
-  const title = String(data["회사/직무(제목)"] || "제목 없는 채용공고").slice(0, 2000);
-  const link = canonicalUrl(data["공고링크"]);
-  const deadline = /^\d{4}-\d{2}-\d{2}$/.test(String(data["마감일"] || "").slice(0, 10))
-    ? String(data["마감일"]).slice(0, 10)
-    : null;
-  const properties = {
-    "회사/직무(제목)": { title: [{ type: "text", text: { content: title } }] },
-    "공고링크": { url: link || null },
-    "주요업무": richText(data["주요업무"]),
-    "지원자격": richText(data["지원자격"]),
-    "우대사항": richText(data["우대사항"]),
-    "기술스택": { multi_select: Array.isArray(data["기술스택"]) ? data["기술스택"].filter(Boolean).map(name => ({ name: String(name).slice(0, 100) })) : [] },
-    "자격/어학": richText(data["자격/어학"]),
-    "근무조건/복지": richText(data["근무조건/복지"]),
-    "지역": richText(data["지역"]),
-    "마감일": { date: deadline ? { start: deadline } : null }
-  };
-  return { properties, link };
 }
 
 async function getSettings() {

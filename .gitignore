@@ -1,0 +1,7 @@
+node_modules/
+coverage/
+dist/
+release/
+*.zip
+CODEX_HANDOF.md
+CODEX_HANDOF.md:Zone.Identifier
