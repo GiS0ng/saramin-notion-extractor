@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "node --check core.js && node --check workflow.js && node --check content.js && node --check background.js && node --check popup.js && node --check offscreen.js && node -e \"JSON.parse(require('fs').readFileSync('manifest.json'))\""
+    "check": "node --check core.js && node --check content.js && node --check background.js && node --check popup.js && node -e \"JSON.parse(require('fs').readFileSync('manifest.json'))\""
   },
   "devDependencies": {
     "jsdom": "^26.1.0",

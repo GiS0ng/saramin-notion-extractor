@@ -28,21 +28,3 @@ textarea { width: 100%; height: 290px; resize: vertical; border: 1px solid #d7db
 .progress { margin-top: 10px; padding: 10px; border-radius: 9px; background: #edf7f1; }
 .progress div { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
 progress { width: 100%; accent-color: #157347; }
-.schedule-hint { margin: 0 0 10px; }
-.limit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 9px; }
-.limit-grid label { margin: 0; font-size: 11px; }
-.limit-grid input { margin-top: 4px; padding: 7px; }
-.url-list { display: grid; gap: 8px; margin-top: 12px; }
-.url-empty { padding: 10px; border-radius: 8px; background: #f4f5f7; color: #777d86; font-size: 12px; text-align: center; }
-.url-item { padding: 10px; border: 1px solid #e1e4e8; border-radius: 9px; }
-.url-item.disabled { opacity: .6; }
-.url-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.url-name { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.url-link { display: block; margin-top: 4px; overflow: hidden; color: #626872; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.url-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
-.url-actions button { padding: 7px 5px; font-size: 11px; }
-.url-actions .danger { margin-top: 0; }
-.auto-test { margin-top: 12px; background: #157347; }
-.stop-auto { margin-top: 7px; }
-.history-list { display: grid; gap: 6px; margin-top: 10px; }
-.history-item { padding: 8px; border-radius: 8px; background: #f4f5f7; color: #626872; font-size: 11px; line-height: 1.45; }
