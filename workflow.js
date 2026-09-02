@@ -46,5 +46,11 @@
     };
   }
 
-  return { CancellationError, httpError, shouldRetry, isFatal, publicError, nextCursor };
+  function jobDecision(recIdx, processedRecIdx, found, maxJobs) {
+    if (found >= maxJobs) return "limit";
+    if (processedRecIdx.has(recIdx)) return "duplicate";
+    return "process";
+  }
+
+  return { CancellationError, httpError, shouldRetry, isFatal, publicError, nextCursor, jobDecision };
 });

@@ -26,6 +26,10 @@ const runAutoCollectionButton = document.querySelector("#runAutoCollection");
 const autoStatus = document.querySelector("#autoStatus");
 const autoHistory = document.querySelector("#autoHistory");
 const stopAutoCollectionButton = document.querySelector("#stopAutoCollection");
+const scheduleEnabled = document.querySelector("#scheduleEnabled");
+const scheduleWeekday = document.querySelector("#scheduleWeekday");
+const scheduleTime = document.querySelector("#scheduleTime");
+const nextScheduledRun = document.querySelector("#nextScheduledRun");
 let searchUrls = [];
 let editingSearchId = null;
 const configFields = { recentDays: document.querySelector("#recentDays"), maxPagesPerSearch: document.querySelector("#maxPagesPerSearch"), maxJobs: document.querySelector("#maxJobs"), maxRetries: document.querySelector("#maxRetries"), minDelaySeconds: document.querySelector("#minDelaySeconds"), maxDelaySeconds: document.querySelector("#maxDelaySeconds") };
@@ -136,6 +140,15 @@ function renderAutoConfig(config = AUTO_DEFAULTS) {
   configFields.maxRetries.value = config.maxRetries;
   configFields.minDelaySeconds.value = Math.round(config.minDelayMs / 1000);
   configFields.maxDelaySeconds.value = Math.round(config.maxDelayMs / 1000);
+  scheduleEnabled.checked = config.scheduleEnabled !== false;
+  scheduleWeekday.value = String(config.weekday || 1);
+  scheduleTime.value = `${String(config.hour ?? 9).padStart(2, "0")}:${String(config.minute ?? 0).padStart(2, "0")}`;
+}
+
+function renderNextRun(scheduledTime, enabled) {
+  nextScheduledRun.textContent = enabled && scheduledTime
+    ? `브라우저 현지 시간 기준 · 다음 실행 ${new Date(scheduledTime).toLocaleString("ko-KR")}`
+    : "브라우저 현지 시간 기준 · 자동 실행 꺼짐";
 }
 
 async function loadAutoSettings() {
@@ -145,7 +158,10 @@ async function loadAutoSettings() {
   autoStatus.textContent = formatAutoState(saved[AUTO_STATE_KEY]);
   stopAutoCollectionButton.hidden = !saved[AUTO_STATE_KEY]?.running;
   renderAutoHistory(saved[AUTO_HISTORY_KEY]);
-  renderAutoConfig({ ...AUTO_DEFAULTS, ...(saved[AUTO_CONFIG_KEY] || {}) });
+  const scheduleResponse = await chrome.runtime.sendMessage({ type: "GET_AUTO_SCHEDULE" });
+  if (!scheduleResponse?.ok) throw new Error(scheduleResponse?.error || "예약 정보를 불러오지 못했습니다.");
+  renderAutoConfig(scheduleResponse.data.config);
+  renderNextRun(scheduleResponse.data.scheduledTime, scheduleResponse.data.config.scheduleEnabled);
 }
 
 loadAutoSettings().catch(error => {
@@ -154,13 +170,32 @@ loadAutoSettings().catch(error => {
 
 document.querySelector("#saveAutoConfig").addEventListener("click", async () => {
   const values = Object.fromEntries(Object.entries(configFields).map(([key, field]) => [key, Number(field.value)]));
-  const config = { recentDays: values.recentDays, maxPagesPerSearch: values.maxPagesPerSearch, maxJobs: values.maxJobs, maxRetries: values.maxRetries, minDelayMs: values.minDelaySeconds * 1000, maxDelayMs: values.maxDelaySeconds * 1000 };
-  if (!Object.values(config).every(Number.isFinite) || config.minDelayMs > config.maxDelayMs || config.recentDays < 1 || config.maxPagesPerSearch < 1 || config.maxJobs < 1 || config.maxRetries < 1) {
+  const [hour, minute] = scheduleTime.value.split(":").map(Number);
+  const config = {
+    recentDays: values.recentDays,
+    maxPagesPerSearch: values.maxPagesPerSearch,
+    maxJobs: values.maxJobs,
+    maxRetries: values.maxRetries,
+    minDelayMs: values.minDelaySeconds * 1000,
+    maxDelayMs: values.maxDelaySeconds * 1000,
+    scheduleEnabled: scheduleEnabled.checked,
+    weekday: Number(scheduleWeekday.value),
+    hour,
+    minute
+  };
+  const numericValues = [config.recentDays, config.maxPagesPerSearch, config.maxJobs, config.maxRetries, config.minDelayMs, config.maxDelayMs, config.weekday, config.hour, config.minute];
+  if (!numericValues.every(Number.isFinite) || config.minDelayMs > config.maxDelayMs || config.recentDays < 1 || config.maxPagesPerSearch < 1 || config.maxJobs < 1 || config.maxRetries < 1) {
     setStatus("자동 수집 제한값을 올바르게 입력해 주세요.", true);
     return;
   }
-  await chrome.storage.local.set({ [AUTO_CONFIG_KEY]: config });
-  setStatus("자동 수집 제한값을 저장했습니다.");
+  const response = await chrome.runtime.sendMessage({ type: "SAVE_AUTO_CONFIG", config });
+  if (!response?.ok) {
+    setStatus(response?.error || "자동 수집 설정을 저장하지 못했습니다.", true);
+    return;
+  }
+  renderAutoConfig(response.data.config);
+  renderNextRun(response.data.scheduledTime, response.data.config.scheduleEnabled);
+  setStatus("자동 수집 설정과 주간 예약을 저장했습니다.");
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -329,7 +364,7 @@ scanButton.addEventListener("click", async () => {
     try {
       response = await chrome.tabs.sendMessage(tab.id, { type: "SCAN_SARAMIN_JOB" }, { frameId: 0 });
     } catch (_) {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["core.js", "content.js"] });
       response = await chrome.tabs.sendMessage(tab.id, { type: "SCAN_SARAMIN_JOB" }, { frameId: 0 });
     }
     if (!response?.ok) throw new Error(response?.error || "공고를 추출하지 못했습니다.");
