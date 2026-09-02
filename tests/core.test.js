@@ -1,6 +1,8 @@
 const fs = require("fs");
 const path = require("path");
+const { JSDOM } = require("jsdom");
 const core = require("../core.js");
+const workflow = require("../workflow.js");
 
 describe("채용공고 핵심 분류", () => {
   it("OCR 텍스트에서 섹션과 기술스택을 분리한다", () => {
@@ -42,6 +44,28 @@ describe("등록일 필터", () => {
   it("절대 등록일의 경계일을 포함한다", () => {
     expect(core.registeredWithinDays("2026.09.03 등록", 7, now)).toBe(true);
     expect(core.registeredWithinDays("2026.09.02 등록", 7, now)).toBe(false);
+  });
+
+  it("검색 결과에서 최근 공고만 중복 없이 반환한다", () => {
+    const html = fs.readFileSync(path.join(__dirname, "fixtures/search-results.html"), "utf8");
+    const dom = new JSDOM(html, { url: "https://www.saramin.co.kr/zf_user/search/recruit" });
+    const jobs = core.parseSearchJobs(dom.window.document, dom.window.location.href, 10, now);
+    expect(jobs.map(job => job.recIdx)).toEqual(["101"]);
+  });
+});
+
+describe("일괄수집 오류와 커서", () => {
+  it("429와 서버 오류만 재시도하고 인증 오류는 중단한다", () => {
+    expect(workflow.shouldRetry(workflow.httpError(429, "rate limit"))).toBe(true);
+    expect(workflow.shouldRetry(workflow.httpError(503, "server"))).toBe(true);
+    const auth = workflow.httpError(401, "unauthorized");
+    expect(workflow.shouldRetry(auth)).toBe(false);
+    expect(workflow.isFatal(auth)).toBe(true);
+  });
+
+  it("완료한 공고의 다음 위치를 재개 커서로 반환한다", () => {
+    expect(workflow.nextCursor(3, 1, 4)).toEqual({ currentPage: 3, nextJobIndex: 2 });
+    expect(workflow.nextCursor(3, 3, 4)).toEqual({ currentPage: 4, nextJobIndex: 0 });
   });
 });
 

@@ -120,6 +120,33 @@
     return registeredAt >= cutoff;
   }
 
+  function parseSearchJobs(documentRoot, baseUrl, recentDays = 7, now = new Date()) {
+    const links = [...documentRoot.querySelectorAll("a[href*='rec_idx=']")];
+    const jobs = [];
+    const seen = new Set();
+    for (const anchor of links) {
+      let url;
+      try {
+        url = new URL(anchor.href || anchor.getAttribute("href"), baseUrl);
+      } catch (_) {
+        continue;
+      }
+      const recIdx = url.searchParams.get("rec_idx");
+      if (!recIdx || seen.has(recIdx) || !/\/zf_user\/jobs\/(?:relay\/)?view/.test(url.pathname)) continue;
+      const row = anchor.closest(".item_recruit, .list_item, article, li") || anchor.parentElement;
+      const rowText = oneLine(row?.textContent || "");
+      if (!registeredWithinDays(rowText, recentDays, now)) continue;
+      seen.add(recIdx);
+      jobs.push({
+        recIdx,
+        url: `${url.origin}/zf_user/jobs/relay/view?rec_idx=${recIdx}`,
+        title: oneLine(anchor.textContent || ""),
+        listingText: rowText.slice(0, 500)
+      });
+    }
+    return jobs;
+  }
+
   function normalizeScheduleConfig(value = {}) {
     const number = (candidate, fallback) => Number.isFinite(Number(candidate))
       ? Number(candidate)
@@ -170,6 +197,7 @@
     richText,
     notionProperties,
     registeredWithinDays,
+    parseSearchJobs,
     normalizeScheduleConfig,
     nextWeeklyOccurrence,
     currentWeeklyAnchor
