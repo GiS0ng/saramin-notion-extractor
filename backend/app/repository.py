@@ -10,13 +10,14 @@ from datetime import datetime, timezone
 from typing import Protocol
 from uuid import uuid4
 
-from app.schemas import JobIn, JobRecord
+from app.schemas import AnalysisResult, JobIn, JobRecord
 
 
 class JobRepository(Protocol):
     def add(self, payload: JobIn) -> JobRecord: ...
     def get(self, job_id: str) -> JobRecord | None: ...
     def list(self) -> list[JobRecord]: ...
+    def set_analysis(self, job_id: str, analysis: AnalysisResult) -> JobRecord | None: ...
 
 
 class InMemoryJobRepository:
@@ -37,6 +38,14 @@ class InMemoryJobRepository:
 
     def list(self) -> list[JobRecord]:
         return list(self._store.values())
+
+    def set_analysis(self, job_id: str, analysis: AnalysisResult) -> JobRecord | None:
+        record = self._store.get(job_id)
+        if record is None:
+            return None
+        updated = record.model_copy(update={"analysis": analysis})
+        self._store[job_id] = updated
+        return updated
 
 
 _repository = InMemoryJobRepository()

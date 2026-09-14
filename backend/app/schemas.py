@@ -9,7 +9,53 @@ class JobIn(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class SeoOutput(BaseModel):
+    title: str
+    description: str
+    headings: list[str]
+
+
+class QnA(BaseModel):
+    q: str
+    a: str
+
+
+class AeoOutput(BaseModel):
+    questions_and_answers: list[QnA]
+
+
+class ClaimEvidence(BaseModel):
+    claim: str
+    evidence: str
+    source: str
+
+
+class GeoOutput(BaseModel):
+    entities: list[str]
+    claim_evidence_pairs: list[ClaimEvidence]
+    summary: str
+
+
+class LlmAnalysisOutput(BaseModel):
+    """LLM이 직접 생성하는 부분. source_id/source_url은 서버가 이미 알고 있으므로
+    LLM에게 다시 생성시키지 않고(오탈자/환각 위험), 호출부에서 AnalysisResult에 채워 넣는다."""
+
+    keywords: list[str]
+    search_intent: str
+    seo: SeoOutput
+    aeo: AeoOutput
+    geo: GeoOutput
+
+
+class AnalysisResult(LlmAnalysisOutput):
+    """claudeRead.md §5.1 개별 문서 분석 출력 스키마."""
+
+    source_id: str
+    source_url: str
+
+
 class JobRecord(BaseModel):
     id: str
     received_at: datetime
     payload: JobIn
+    analysis: AnalysisResult | None = None
