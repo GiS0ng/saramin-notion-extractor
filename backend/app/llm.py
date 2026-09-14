@@ -8,11 +8,11 @@ import json
 
 import anthropic
 
-from app.schemas import JobIn, LlmAnalysisOutput
+from app.schemas import GeneratedContentDraft, JobIn, KeywordStat, LlmAnalysisOutput
 
 _MODEL = "claude-opus-5"
 
-_PROMPT_TEMPLATE = """\
+_ANALYSIS_PROMPT_TEMPLATE = """\
 다음은 채용공고 원본 데이터(JSON)다. 이 데이터를 분석해서 SEO/AEO/GEO 콘텐츠 제작에 쓸 구조화된 태그를 생성하라.
 
 - keywords: 이 공고에서 핵심이 되는 키워드 목록
@@ -28,6 +28,18 @@ _PROMPT_TEMPLATE = """\
 {payload_json}
 """
 
+_BATCH_DRAFT_PROMPT_TEMPLATE = """\
+다음은 최근 채용공고 {sample_size}건(집계 기간: {period})을 분석해서 뽑은 키워드 등장 빈도 통계다.
+빈도(%)는 "이 키워드가 등장한 공고 수 / 전체 분석 공고 수"이다.
+
+{stats_text}
+
+이 통계를 소재로 한 데이터저널리즘형 콘텐츠 초안을 작성하라:
+- seo_title: 이 통계를 소재로 한 콘텐츠의 SEO 제목
+- aeo_qna: 이 통계에 대해 구직자/채용담당자가 가질 법한 예상 질문과 답변 목록
+- geo_summary: AI 검색(ChatGPT/Perplexity 등)이 인용하기 쉬운 형태의 간결한 요약문 (구체적인 숫자를 포함)
+"""
+
 
 def get_anthropic_client() -> anthropic.Anthropic:
     return anthropic.Anthropic()
@@ -35,12 +47,32 @@ def get_anthropic_client() -> anthropic.Anthropic:
 
 def analyze_job(payload: JobIn, client: anthropic.Anthropic) -> LlmAnalysisOutput:
     payload_json = json.dumps(payload.model_dump(), ensure_ascii=False, indent=2)
-    prompt = _PROMPT_TEMPLATE.format(payload_json=payload_json)
+    prompt = _ANALYSIS_PROMPT_TEMPLATE.format(payload_json=payload_json)
 
     response = client.messages.parse(
         model=_MODEL,
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
         output_format=LlmAnalysisOutput,
+    )
+    return response.parsed_output
+
+
+def generate_batch_draft(
+    stats: list[KeywordStat],
+    sample_size: int,
+    period: str,
+    client: anthropic.Anthropic,
+) -> GeneratedContentDraft:
+    stats_text = "\n".join(f"- {s.keyword}: {s.frequency_pct}%" for s in stats)
+    prompt = _BATCH_DRAFT_PROMPT_TEMPLATE.format(
+        sample_size=sample_size, period=period, stats_text=stats_text
+    )
+
+    response = client.messages.parse(
+        model=_MODEL,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}],
+        output_format=GeneratedContentDraft,
     )
     return response.parsed_output

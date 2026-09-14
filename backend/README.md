@@ -38,6 +38,13 @@ curl -s http://127.0.0.1:8000/jobs/<id>
 
 # LLM 구조화 출력(SEO/AEO/GEO) 분석 — ANTHROPIC_API_KEY 필요
 curl -s -X POST http://127.0.0.1:8000/jobs/<id>/analyze
+
+# 집계 배치 — 분석 완료된 job이 10건 이상 있어야 함 (미만이면 422)
+curl -s -X POST http://127.0.0.1:8000/batches/analyze
+
+# 집계 배치 목록/단건 조회
+curl -s http://127.0.0.1:8000/batches
+curl -s http://127.0.0.1:8000/batches/<batch_id>
 ```
 
 ## 범위
@@ -47,5 +54,10 @@ curl -s -X POST http://127.0.0.1:8000/jobs/<id>/analyze
   `claudeRead.md` §5.1 스키마(keywords/search_intent/seo/aeo/geo)로 구조화 출력을 받아
   저장하고 반환한다. `source_id`/`source_url`은 LLM이 생성하지 않고 서버가 채운다
   (LLM이 ID/URL을 잘못 옮겨 적을 위험을 없애기 위함).
-- PostgreSQL 연결, 집계 배치, Notion 분석 DB 연동, GEO 모니터링은 다음 단계 TODO
+- `POST /batches/analyze`, `GET /batches`, `GET /batches/{id}`: `claudeRead.md` §5.2 집계
+  배치. 분석(`/jobs/{id}/analyze`)이 끝난 job들의 `keywords`를 모아 등장 빈도(%)를 계산하고,
+  그 통계를 다시 Claude API에 한 번 더 넣어 데이터저널리즘형 콘텐츠 초안
+  (`generated_content_draft`: seo_title/aeo_qna/geo_summary)까지 생성한다.
+  최소 표본 크기는 **10건**(`app/aggregation.py`의 `MIN_SAMPLE_SIZE`) — 미달이면 `422`.
+- PostgreSQL 연결, Notion 분석 DB 연동, GEO 모니터링은 다음 단계 TODO
 - 테스트 코드는 `codex exec`로 별도 작성 (저장소 루트 `CLAUDE.md` 참고)

@@ -59,3 +59,26 @@ class JobRecord(BaseModel):
     received_at: datetime
     payload: JobIn
     analysis: AnalysisResult | None = None
+
+
+class KeywordStat(BaseModel):
+    keyword: str
+    frequency_pct: float
+
+
+class GeneratedContentDraft(BaseModel):
+    """LLM이 집계 통계를 바탕으로 생성하는 콘텐츠 초안."""
+
+    seo_title: str
+    aeo_qna: list[QnA]
+    geo_summary: str
+
+
+class BatchResult(BaseModel):
+    """claudeRead.md §5.2 집계 콘텐츠 출력 스키마."""
+
+    batch_id: str
+    sample_size: int
+    period: str
+    stats: list[KeywordStat]
+    generated_content_draft: GeneratedContentDraft
