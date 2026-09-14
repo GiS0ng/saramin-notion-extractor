@@ -82,3 +82,16 @@ class BatchResult(BaseModel):
     period: str
     stats: list[KeywordStat]
     generated_content_draft: GeneratedContentDraft
+
+
+class CreateAnalysisDatabaseRequest(BaseModel):
+    """claudeRead.md §5.3 Notion 분석 DB를 생성할 부모 페이지."""
+
+    parent_page_id: str
+
+
+class CreateAnalysisDatabaseResponse(BaseModel):
+    database_id: str
+    data_source_id: str
+    url: str
+    properties: list[str]
