@@ -1,6 +1,7 @@
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.errors import translate_missing_credentials
 from app.llm import analyze_job, get_anthropic_client
 from app.repository import JobRepository, get_job_repository
 from app.schemas import AnalysisResult, JobIn, JobRecord
@@ -37,16 +38,10 @@ def analyze(
         raise HTTPException(status_code=404, detail="job not found")
 
     try:
-        llm_output = analyze_job(record.payload, client)
+        with translate_missing_credentials():
+            llm_output = analyze_job(record.payload, client)
     except anthropic.APIError as exc:
         raise HTTPException(status_code=502, detail=f"LLM 호출 실패: {exc}") from exc
-    except TypeError as exc:
-        # anthropic SDK는 자격증명(ANTHROPIC_API_KEY 등)을 못 찾으면 APIError가 아닌
-        # TypeError를 던진다. 별도로 잡아 설정 문제라는 걸 명확히 알려준다.
-        raise HTTPException(
-            status_code=500,
-            detail=f"Anthropic 인증 정보가 설정되지 않았습니다 (ANTHROPIC_API_KEY 환경변수 필요): {exc}",
-        ) from exc
 
     source_url = record.payload.model_dump().get("공고링크", "")
     analysis = AnalysisResult(source_id=record.id, source_url=source_url, **llm_output.model_dump())

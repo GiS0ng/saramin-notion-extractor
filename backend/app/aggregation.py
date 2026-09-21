@@ -4,10 +4,13 @@ claudeRead.md §4.2: 개별 문서 분석과 집계 분석은 서로 다른 배�
 개별 분석(app/llm.py의 analyze_job)이 이미 끝난 job들만 집계 대상으로 삼는다.
 """
 
+from datetime import timedelta, timezone
+
 from app.schemas import JobRecord, KeywordStat
 
 MIN_SAMPLE_SIZE = 10
 TOP_N_KEYWORDS = 10
+KST = timezone(timedelta(hours=9))
 
 
 class InsufficientSampleError(Exception):
@@ -44,7 +47,10 @@ def compute_keyword_stats(jobs: list[JobRecord]) -> tuple[list[KeywordStat], str
     stats.sort(key=lambda s: s.frequency_pct, reverse=True)
     stats = stats[:TOP_N_KEYWORDS]
 
-    received_dates = sorted(job.received_at for job in analyzed)
+    # received_at은 UTC로 저장되지만(app/repository.py), 나머지 제품(core.js, README)은
+    # 한국시간 기준 날짜를 쓴다 — 00:00~09:00 KST에 들어온 job이 하루 어긋나지 않도록
+    # 여기서도 KST로 환산한 날짜를 집계 기간에 쓴다.
+    received_dates = sorted(job.received_at.astimezone(KST) for job in analyzed)
     period = f"{received_dates[0].date().isoformat()} ~ {received_dates[-1].date().isoformat()}"
 
     return stats, period, sample_size

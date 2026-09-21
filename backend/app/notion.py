@@ -9,10 +9,14 @@ claudeRead.md §5.3 컬럼 표를 그대로 Notion 데이터베이스 속성으�
 아니라 initial_data_source.properties로 보낸다.
 """
 
+import time
+from collections.abc import Iterator
+
 import httpx
 
 NOTION_VERSION = "2026-03-11"
 NOTION_API_BASE = "https://api.notion.com/v1"
+MAX_RETRIES = 3
 
 ANALYSIS_DB_PROPERTIES: dict[str, dict] = {
     "원본 제목": {"type": "title", "title": {}},
@@ -52,23 +56,34 @@ ANALYSIS_DB_PROPERTIES: dict[str, dict] = {
 }
 
 
-def get_http_client() -> httpx.Client:
-    return httpx.Client(timeout=30.0)
+def get_http_client() -> Iterator[httpx.Client]:
+    with httpx.Client(timeout=30.0) as client:
+        yield client
 
 
 def create_analysis_database(parent_page_id: str, token: str, client: httpx.Client) -> dict:
-    response = client.post(
-        f"{NOTION_API_BASE}/databases",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Notion-Version": NOTION_VERSION,
-            "Content-Type": "application/json",
-        },
-        json={
-            "parent": {"type": "page_id", "page_id": parent_page_id},
-            "title": [{"type": "text", "text": {"content": "SEO/AEO/GEO 분석 DB"}}],
-            "initial_data_source": {"properties": ANALYSIS_DB_PROPERTIES},
-        },
-    )
+    # background.js's notionFetch() backs off on 429/Retry-After; this call
+    # reuses the same retry principle so a rate limit doesn't surface as a
+    # hard failure the caller has to retry manually.
+    for attempt in range(MAX_RETRIES):
+        response = client.post(
+            f"{NOTION_API_BASE}/databases",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Notion-Version": NOTION_VERSION,
+                "Content-Type": "application/json",
+            },
+            json={
+                "parent": {"type": "page_id", "page_id": parent_page_id},
+                "title": [{"type": "text", "text": {"content": "SEO/AEO/GEO 분석 DB"}}],
+                "initial_data_source": {"properties": ANALYSIS_DB_PROPERTIES},
+            },
+        )
+        if response.status_code == 429 and attempt < MAX_RETRIES - 1:
+            retry_after = float(response.headers.get("Retry-After", "1"))
+            time.sleep(retry_after)
+            continue
+        response.raise_for_status()
+        return response.json()
     response.raise_for_status()
     return response.json()

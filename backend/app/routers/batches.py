@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.aggregation import InsufficientSampleError, compute_keyword_stats
 from app.batch_repository import BatchRepository, get_batch_repository
+from app.errors import translate_missing_credentials
 from app.llm import generate_batch_draft, get_anthropic_client
 from app.repository import JobRepository, get_job_repository
 from app.schemas import BatchResult
@@ -24,14 +25,10 @@ def analyze_batch(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
-        draft = generate_batch_draft(stats, sample_size, period, client)
+        with translate_missing_credentials():
+            draft = generate_batch_draft(stats, sample_size, period, client)
     except anthropic.APIError as exc:
         raise HTTPException(status_code=502, detail=f"LLM 호출 실패: {exc}") from exc
-    except TypeError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Anthropic 인증 정보가 설정되지 않았습니다 (ANTHROPIC_API_KEY 환경변수 필요): {exc}",
-        ) from exc
 
     batch = BatchResult(
         batch_id=str(uuid4()),
