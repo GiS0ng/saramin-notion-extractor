@@ -61,24 +61,19 @@ def get_http_client() -> Iterator[httpx.Client]:
         yield client
 
 
-def create_analysis_database(parent_page_id: str, token: str, client: httpx.Client) -> dict:
-    # background.js's notionFetch() backs off on 429/Retry-After; this call
-    # reuses the same retry principle so a rate limit doesn't surface as a
-    # hard failure the caller has to retry manually.
+def _request_with_retry(client: httpx.Client, path: str, token: str, *, json_body: dict) -> dict:
+    """POST {NOTION_API_BASE}{path}, backing off on 429/Retry-After.
+
+    background.js's notionFetch() backs off the same way; create_analysis_database(),
+    query_data_source() 모두 이 헬퍼를 공유해서 재시도 로직이 한 곳에만 있게 한다.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": NOTION_VERSION,
+        "Content-Type": "application/json",
+    }
     for attempt in range(MAX_RETRIES):
-        response = client.post(
-            f"{NOTION_API_BASE}/databases",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Notion-Version": NOTION_VERSION,
-                "Content-Type": "application/json",
-            },
-            json={
-                "parent": {"type": "page_id", "page_id": parent_page_id},
-                "title": [{"type": "text", "text": {"content": "SEO/AEO/GEO 분석 DB"}}],
-                "initial_data_source": {"properties": ANALYSIS_DB_PROPERTIES},
-            },
-        )
+        response = client.post(f"{NOTION_API_BASE}{path}", headers=headers, json=json_body)
         if response.status_code == 429 and attempt < MAX_RETRIES - 1:
             retry_after = float(response.headers.get("Retry-After", "1"))
             time.sleep(retry_after)
@@ -87,3 +82,55 @@ def create_analysis_database(parent_page_id: str, token: str, client: httpx.Clie
         return response.json()
     response.raise_for_status()
     return response.json()
+
+
+def create_analysis_database(parent_page_id: str, token: str, client: httpx.Client) -> dict:
+    return _request_with_retry(
+        client,
+        "/databases",
+        token,
+        json_body={
+            "parent": {"type": "page_id", "page_id": parent_page_id},
+            "title": [{"type": "text", "text": {"content": "SEO/AEO/GEO 분석 DB"}}],
+            "initial_data_source": {"properties": ANALYSIS_DB_PROPERTIES},
+        },
+    )
+
+
+def query_data_source(
+    data_source_id: str,
+    token: str,
+    client: httpx.Client,
+    *,
+    filter: dict | None = None,
+    start_cursor: str | None = None,
+    page_size: int = 100,
+) -> dict:
+    body: dict = {"page_size": page_size}
+    if filter is not None:
+        body["filter"] = filter
+    if start_cursor is not None:
+        body["start_cursor"] = start_cursor
+    return _request_with_retry(client, f"/data_sources/{data_source_id}/query", token, json_body=body)
+
+
+def iterate_data_source(
+    data_source_id: str,
+    token: str,
+    client: httpx.Client,
+    *,
+    filter: dict | None = None,
+) -> Iterator[dict]:
+    """data_source_id의 모든 페이지를 has_more/next_cursor를 따라가며 순회한다.
+
+    backend/app/ingest.py가 Notion RAW DB 전체를 매주 재조회할 때 쓴다.
+    """
+    cursor: str | None = None
+    while True:
+        result = query_data_source(data_source_id, token, client, filter=filter, start_cursor=cursor)
+        yield from result.get("results", [])
+        if not result.get("has_more"):
+            return
+        cursor = result.get("next_cursor")
+        if not cursor:
+            return
