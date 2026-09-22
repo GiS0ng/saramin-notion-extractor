@@ -18,8 +18,10 @@ jobs:
       - run: npm test
       - run: npm run export:skills && git diff --exit-code shared/skill-catalog.json
       - run: npm run package
-      - run: cd dist && zip -r saramin-notion-extractor-v1.0.0.zip saramin-notion-extractor
+      - id: version
+        run: echo "value=$(node -e "console.log(require('./manifest.json').version)")" >> "$GITHUB_OUTPUT"
+      - run: cd dist && zip -r "saramin-notion-extractor-v${{ steps.version.outputs.value }}.zip" saramin-notion-extractor
       - uses: actions/upload-artifact@v4
         with:
-          name: saramin-notion-extractor-v1.0.0
-          path: dist/saramin-notion-extractor-v1.0.0.zip
+          name: saramin-notion-extractor-v${{ steps.version.outputs.value }}
+          path: dist/saramin-notion-extractor-v${{ steps.version.outputs.value }}.zip
