@@ -16,6 +16,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm run export:skills && git diff --exit-code shared/skill-catalog.json
       - run: npm run package
       - run: cd dist && zip -r saramin-notion-extractor-v1.0.0.zip saramin-notion-extractor
       - uses: actions/upload-artifact@v4

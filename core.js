@@ -22,7 +22,7 @@
   // Canonical names keep Notion options consistent across English/Korean spellings.
   const SKILL_ALIASES = {
     Python: ["파이썬"], Java: ["자바"], JavaScript: ["JS", "자바스크립트"], TypeScript: ["TS", "타입스크립트"],
-    Excel: ["엑셀", "스프레드시트", "스프레드 시트"], "Power BI": ["PowerBI"],
+    Excel: ["엑셀", "스프레드시트", "스프레드 시트", "ExcelVBA", "엑셀VBA"], "Power BI": ["PowerBI", "BI 툴"],
     "C++": ["CPP", "씨플러스플러스"], "C#": ["CSharp", "C Sharp"], C: ["C언어", "C 언어"],
     Go: ["Golang"], R: ["R언어", "R 언어"], Kotlin: ["코틀린"], Swift: ["스위프트"],
     React: ["React.js", "ReactJS", "리액트"], "Next.js": ["NextJS", "Next JS"],
@@ -219,7 +219,7 @@
       if (full[1].length === 2) components[0] += 2000;
     }
     else {
-      const short = target.match(/(?<![\d.\-/])(\d{1,2})\s*[.\/월]\s*(\d{1,2})(?!\d)/);
+      const short = target.match(/(?<![\d.\-/])(\d{1,2})\s*[.\-/월]\s*(\d{1,2})(?!\d)/);
       if (short) {
         const start = parts.length > 1 ? [...parts[0].matchAll(fullPattern)].at(-1) : null;
         const [currentYear, currentMonth] = koreaDate(now);
@@ -260,13 +260,28 @@
 
   function parseDeadline(root, detailText, now, pageUrl) {
     // Walk each term: Saramin can put the start and end pairs in the same dl.
-    for (const label of root.querySelectorAll("dt, th")) {
-      const term = oneLine(label.textContent).replace(/[\s:：]/g, "");
-      if (!/^(?:접수)?마감(?:일|일시)?$|^(?:접수|모집|지원)기간$/.test(term)) continue;
-      const value = label.nextElementSibling;
-      if (!value?.matches("dd, td")) continue;
-      const result = deadlineValue(value.textContent, now);
-      if (result.date || result.status !== "확인필요") return { ...result, source: "접수정보" };
+    // Specific "마감" labels win over generic period labels (모집기간/접수기간
+    // /지원기간) — a summary block can carry a generic open-ended note next to
+    // the real 마감일, and the generic one must not shadow it.
+    const specificTerm = /^(?:접수)?마감(?:일|일시)?$/;
+    const periodTerm = /^(?:접수|모집|지원)기간$/;
+    for (const termPattern of [specificTerm, periodTerm]) {
+      for (const label of root.querySelectorAll("dt, th")) {
+        const term = oneLine(label.textContent).replace(/[\s:：]/g, "");
+        if (!termPattern.test(term)) continue;
+        let value = label.nextElementSibling;
+        if (!value?.matches("dd, td")) {
+          // Markup sometimes wraps the value in an icon/span before the dd/td,
+          // or nests it a level deeper; fall back to the enclosing dl/tr only
+          // when it unambiguously holds a single value.
+          const container = label.closest("dl, tr");
+          const candidates = container ? [...container.querySelectorAll("dd, td")] : [];
+          value = candidates.length === 1 ? candidates[0] : null;
+        }
+        if (!value) continue;
+        const result = deadlineValue(value.textContent, now);
+        if (result.date || result.status !== "확인필요") return { ...result, source: "접수정보" };
+      }
     }
     for (const area of root.querySelectorAll(".jv_howto, .jv_cont.jv_apply, .recruit_period")) {
       const copy = area.cloneNode(true);
@@ -289,7 +304,8 @@
         else if (child && typeof child === "object") collect(child);
       });
     }
-    for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
+    const scripts = [...doc.querySelectorAll('script[type="application/ld+json"]')];
+    for (const script of scripts) {
       try { collect(JSON.parse(script.textContent)); } catch (_) { /* Malformed JSON-LD is optional. */ }
     }
     for (const job of jobs) {
@@ -297,7 +313,12 @@
       const matches = identities.some(value => value === recIdx || (() => {
         try { return new URL(value, pageUrl).searchParams.get("rec_idx") === recIdx; } catch (_) { return false; }
       })());
-      if (!matches && !(jobs.length === 1 && !identities.length && doc.querySelectorAll("section.jview").length <= 1)) continue;
+      // Without an explicit id, only trust the JobPosting when it is the page's
+      // sole ld+json script and JobPosting object — a related-postings widget
+      // emitting its own unidentified JobPosting elsewhere must not get matched.
+      const isOnlyUnidentifiedJob = jobs.length === 1 && !identities.length &&
+        scripts.length === 1 && doc.querySelectorAll("section.jview").length <= 1;
+      if (!matches && !isOnlyUnidentifiedJob) continue;
       const result = deadlineValue(job.validThrough, now);
       if (result.date) return { ...result, source: "JobPosting.validThrough" };
     }
@@ -426,6 +447,10 @@
     mergeOcrFields,
     normalizeScheduleConfig,
     nextWeeklyOccurrence,
-    currentWeeklyAnchor
+    currentWeeklyAnchor,
+    // scripts/export-skill-catalog.mjs가 이 어휘를 shared/skill-catalog.json으로 내보내
+    // 백엔드(backend/app/skills.py)가 같은 스킬 이름/별칭을 GitHub 매칭에도 쓴다.
+    SKILL_CATALOG,
+    SKILL_ALIASES
   };
 });

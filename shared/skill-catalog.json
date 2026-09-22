@@ -1,0 +1,344 @@
+{
+  "SKILL_CATALOG": [
+    "Python",
+    "SQL",
+    "Excel",
+    "Java",
+    "C",
+    "Linux",
+    "Docker",
+    "Git",
+    "Power BI",
+    "MES",
+    "ERP",
+    "PLC",
+    "Hugging Face",
+    "Ollama",
+    "vLLM",
+    "RAG",
+    "JavaScript",
+    "TypeScript",
+    "C++",
+    "C#",
+    "Go",
+    "Rust",
+    "Kotlin",
+    "Swift",
+    "Dart",
+    "PHP",
+    "Ruby",
+    "Scala",
+    "R",
+    "MATLAB",
+    "HTML",
+    "CSS",
+    "Sass",
+    "React",
+    "Next.js",
+    "Vue.js",
+    "Nuxt.js",
+    "Angular",
+    "Svelte",
+    "jQuery",
+    "Redux",
+    "Zustand",
+    "Tailwind CSS",
+    "Bootstrap",
+    "Vite",
+    "Webpack",
+    "Node.js",
+    "Express",
+    "NestJS",
+    "Spring",
+    "Spring Boot",
+    "Spring Security",
+    "JPA",
+    "Hibernate",
+    "MyBatis",
+    "Django",
+    "Flask",
+    "FastAPI",
+    "Laravel",
+    ".NET",
+    "ASP.NET",
+    "Ruby on Rails",
+    "React Native",
+    "Flutter",
+    "Android",
+    "iOS",
+    "Unity",
+    "Unreal Engine",
+    "MySQL",
+    "PostgreSQL",
+    "MariaDB",
+    "Oracle",
+    "SQL Server",
+    "SQLite",
+    "MongoDB",
+    "Redis",
+    "DynamoDB",
+    "Elasticsearch",
+    "OpenSearch",
+    "Cassandra",
+    "Neo4j",
+    "AWS",
+    "Azure",
+    "GCP",
+    "Kubernetes",
+    "Terraform",
+    "Ansible",
+    "Jenkins",
+    "GitHub Actions",
+    "GitLab CI",
+    "Argo CD",
+    "Helm",
+    "Nginx",
+    "Apache",
+    "Tomcat",
+    "Ubuntu",
+    "Bash",
+    "PowerShell",
+    "Kafka",
+    "RabbitMQ",
+    "GraphQL",
+    "REST API",
+    "gRPC",
+    "WebSocket",
+    "OAuth",
+    "JWT",
+    "NumPy",
+    "pandas",
+    "SciPy",
+    "scikit-learn",
+    "PyTorch",
+    "TensorFlow",
+    "Keras",
+    "OpenCV",
+    "Transformers",
+    "LangChain",
+    "LlamaIndex",
+    "MLflow",
+    "Kubeflow",
+    "ONNX",
+    "TensorRT",
+    "CUDA",
+    "Spark",
+    "Hadoop",
+    "Airflow",
+    "Flink",
+    "dbt",
+    "Snowflake",
+    "BigQuery",
+    "Redshift",
+    "Databricks",
+    "Tableau",
+    "Looker",
+    "Superset",
+    "Prometheus",
+    "Grafana",
+    "Datadog",
+    "Sentry",
+    "Jest",
+    "Vitest",
+    "pytest",
+    "JUnit",
+    "Cypress",
+    "Playwright",
+    "Selenium",
+    "Postman",
+    "Figma",
+    "Jira",
+    "Confluence",
+    "SAP",
+    "AutoCAD",
+    "SolidWorks",
+    "LabVIEW",
+    "ROS",
+    "Raspberry Pi",
+    "Arduino"
+  ],
+  "SKILL_ALIASES": {
+    "Python": [
+      "파이썬"
+    ],
+    "Java": [
+      "자바"
+    ],
+    "JavaScript": [
+      "JS",
+      "자바스크립트"
+    ],
+    "TypeScript": [
+      "TS",
+      "타입스크립트"
+    ],
+    "Excel": [
+      "엑셀",
+      "스프레드시트",
+      "스프레드 시트",
+      "ExcelVBA",
+      "엑셀VBA"
+    ],
+    "Power BI": [
+      "PowerBI",
+      "BI 툴"
+    ],
+    "C++": [
+      "CPP",
+      "씨플러스플러스"
+    ],
+    "C#": [
+      "CSharp",
+      "C Sharp"
+    ],
+    "C": [
+      "C언어",
+      "C 언어"
+    ],
+    "Go": [
+      "Golang"
+    ],
+    "R": [
+      "R언어",
+      "R 언어"
+    ],
+    "Kotlin": [
+      "코틀린"
+    ],
+    "Swift": [
+      "스위프트"
+    ],
+    "React": [
+      "React.js",
+      "ReactJS",
+      "리액트"
+    ],
+    "Next.js": [
+      "NextJS",
+      "Next JS"
+    ],
+    "Vue.js": [
+      "Vue",
+      "VueJS",
+      "Vue JS",
+      "뷰.js"
+    ],
+    "Nuxt.js": [
+      "Nuxt",
+      "NuxtJS"
+    ],
+    "Node.js": [
+      "NodeJS",
+      "Node JS",
+      "노드.js"
+    ],
+    "NestJS": [
+      "Nest.js",
+      "Nest JS"
+    ],
+    "Tailwind CSS": [
+      "Tailwind",
+      "TailwindCSS"
+    ],
+    "Spring": [
+      "스프링"
+    ],
+    "Spring Boot": [
+      "SpringBoot",
+      "스프링 부트",
+      "스프링부트"
+    ],
+    "JPA": [
+      "Spring Data JPA"
+    ],
+    ".NET": [
+      "dotnet",
+      "닷넷"
+    ],
+    "ASP.NET": [
+      "ASP NET"
+    ],
+    "Ruby on Rails": [
+      "Rails"
+    ],
+    "React Native": [
+      "ReactNative",
+      "리액트 네이티브"
+    ],
+    "Flutter": [
+      "플러터"
+    ],
+    "Unreal Engine": [
+      "Unreal",
+      "언리얼"
+    ],
+    "PostgreSQL": [
+      "Postgres"
+    ],
+    "SQL Server": [
+      "MSSQL",
+      "MS SQL"
+    ],
+    "AWS": [
+      "Amazon Web Services",
+      "아마존 웹 서비스"
+    ],
+    "Azure": [
+      "Microsoft Azure",
+      "애저"
+    ],
+    "GCP": [
+      "Google Cloud",
+      "Google Cloud Platform"
+    ],
+    "Kubernetes": [
+      "K8s",
+      "쿠버네티스"
+    ],
+    "Docker": [
+      "도커"
+    ],
+    "Linux": [
+      "리눅스"
+    ],
+    "GitHub Actions": [
+      "GithubActions"
+    ],
+    "GitLab CI": [
+      "GitLab CI/CD"
+    ],
+    "Argo CD": [
+      "ArgoCD"
+    ],
+    "REST API": [
+      "RESTful",
+      "RESTful API"
+    ],
+    "scikit-learn": [
+      "sklearn",
+      "scikit learn"
+    ],
+    "PyTorch": [
+      "파이토치"
+    ],
+    "TensorFlow": [
+      "텐서플로",
+      "텐서플로우"
+    ],
+    "Hugging Face": [
+      "HuggingFace",
+      "허깅 페이스",
+      "허깅페이스"
+    ],
+    "RAG": [
+      "검색 증강",
+      "검색증강"
+    ],
+    "Raspberry Pi": [
+      "라즈베리파이"
+    ],
+    "PLC": [
+      "피엘씨"
+    ]
+  }
+}

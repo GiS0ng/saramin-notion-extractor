@@ -7,7 +7,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "node --check core.js && node --check workflow.js && node --check content.js && node --check background.js && node --check popup.js && node --check offscreen.js && node --check scripts/package-extension.mjs && node -e \"JSON.parse(require('fs').readFileSync('manifest.json'))\"",
-    "package": "node scripts/package-extension.mjs"
+    "package": "node scripts/package-extension.mjs",
+    "export:skills": "node scripts/export-skill-catalog.mjs"
   },
   "devDependencies": {
     "jsdom": "^26.1.0",
