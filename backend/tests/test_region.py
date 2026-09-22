@@ -20,3 +20,14 @@ from app.region import normalize_region
 )
 def test_normalize_region(raw: str | None, expected: str) -> None:
     assert normalize_region(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("(480-58) 부산광역시 해운대구", "부산"),
+        ("(57975) 전남광주 순천시 장선배기길 34", "기타"),
+    ],
+)
+def test_normalize_region_raw_database_regressions(raw: str, expected: str) -> None:
+    assert normalize_region(raw) == expected
