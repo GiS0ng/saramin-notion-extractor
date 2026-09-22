@@ -1,8 +1,8 @@
 # SEO/AEO/GEO 분석 백엔드 (최소 스캐폴드)
 
-`saramin-notion-extractor` 수집기 뒤에 붙는 분석 백엔드. `claudeRead.md`
-TODO 기준으로 PostgreSQL 없이 인메모리 저장소만 사용하며, LLM 구조화 출력(§5.1)까지
-구현되어 있다.
+`saramin-notion-extractor` 수집기 뒤에 붙는 분석 백엔드. LLM 구조화 출력(§5.1)에 더해
+`DATABASE_URL`이 설정되면 PostgreSQL 저장소를 쓴다(없으면 인메모리로 자동 폴백) — 아래
+"주간 리포트" 절 참고.
 
 ## 실행
 
@@ -74,5 +74,52 @@ curl -s -X POST http://127.0.0.1:8000/notion/analysis-database \
     미리 추가해야 한다 (`docs/notion-setup.md` §4와 동일한 절차 — 연결 추가 안 하면 404).
   - **주의**: 호출하면 실제 워크스페이스에 데이터베이스가 즉시 생성된다. 삭제는 Notion에서
     수동으로 해야 하므로, 실제 API 키로 테스트하기 전에 이 사실을 인지할 것.
-- PostgreSQL 연결, GEO 모니터링은 다음 단계 TODO
+- GEO 모니터링은 다음 단계 TODO
 - 테스트 코드는 `codex exec`로 별도 작성 (저장소 루트 `CLAUDE.md` 참고)
+
+## 주간 리포트 (지역별 기술스택 + GitHub 매칭 추천)
+
+`scripts/weekly_report.py`가 단일 진입점이다: Notion RAW DB ingest → 지역별 기술스택 집계
+→ GitHub 매칭 추천 → 각각의 Notion 리포트 DB에 기록. `.github/workflows/weekly-report.yml`이
+매주 금요일 10:00 KST에 이걸 실행한다(`workflow_dispatch`로 수동 실행도 가능).
+
+### 필요한 환경변수
+
+| 변수 | 용도 |
+|---|---|
+| `DATABASE_URL` | Postgres 연결 문자열(`postgresql+psycopg://...`) — job 저장소 |
+| `NOTION_TOKEN` | 기존 내부 연결 토큰. RAW DB와 두 리포트 DB 모두에 연결을 추가해야 함 |
+| `NOTION_RAW_DATA_SOURCE_ID` | 확장 프로그램이 쓰는 RAW DB의 데이터 소스 ID(`docs/notion-setup.md` §6) |
+| `NOTION_REGION_REPORT_DATA_SOURCE_ID` | `POST /notion/region-report-database`로 만든 DB의 데이터 소스 ID |
+| `NOTION_GITHUB_REPORT_DATA_SOURCE_ID` | `POST /notion/github-match-database`로 만든 DB의 데이터 소스 ID |
+| `GITHUB_MATCH_USERNAME` | 매칭 대상 GitHub 사용자명(단일 사용자) |
+| `GITHUB_MATCH_TOKEN` | GitHub PAT(fine-grained, Public Repositories 읽기 권한만) — 없어도 동작하지만 레이트리밋이 60/hr로 줄어듦 |
+
+로컬에서는 `backend/.env`에 위 값을 넣고 `set -a && source .env && set +a` 후 실행하면 된다
+(`.env`는 `.gitignore`에 있어 커밋되지 않음). GitHub Actions에서는 저장소 시크릿으로 등록한다 —
+단, 시크릿 이름은 `GITHUB_` 접두사를 쓸 수 없으므로 `GITHUB_MATCH_USERNAME`/`GITHUB_MATCH_TOKEN`은
+각각 `GH_MATCH_USERNAME`/`GH_MATCH_TOKEN`이라는 이름으로 등록하고, 워크플로우가 실행 시점에
+`GITHUB_MATCH_*` 이름으로 다시 매핑한다(`.github/workflows/weekly-report.yml` 참고).
+
+### 리포트 DB 최초 생성 (한 번만)
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/notion/region-report-database \
+  -H "Content-Type: application/json" -d '{"parent_page_id": "<부모 페이지 ID>"}'
+
+curl -s -X POST http://127.0.0.1:8000/notion/github-match-database \
+  -H "Content-Type: application/json" -d '{"parent_page_id": "<부모 페이지 ID>"}'
+```
+
+응답의 `data_source_id`를 각각 `NOTION_REGION_REPORT_DATA_SOURCE_ID`/
+`NOTION_GITHUB_REPORT_DATA_SOURCE_ID`로 저장한다. `parent_page_id`는 **일반 페이지**여야 하며
+(데이터베이스 자체는 부모가 될 수 없다), `NOTION_TOKEN`의 내부 연결이 그 페이지에 미리
+추가돼 있어야 한다(`docs/notion-setup.md` §4와 동일).
+
+### 실행
+
+```bash
+cd backend && .venv/bin/python -m scripts.weekly_report            # 실제로 Notion에 기록
+cd backend && .venv/bin/python -m scripts.weekly_report --dry-run  # 집계만 하고 쓰지 않음
+cd backend && .venv/bin/python -m scripts.weekly_report --skip-github  # 지역별 리포트만
+```

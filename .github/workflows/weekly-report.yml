@@ -1,0 +1,31 @@
+name: weekly-report
+
+on:
+  schedule:
+    # 매주 금요일 10:00 KST(UTC+9) = 금요일 01:00 UTC
+    - cron: "0 1 * * 5"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements.txt
+      - run: python -m scripts.weekly_report
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_RAW_DATA_SOURCE_ID: ${{ secrets.NOTION_RAW_DATA_SOURCE_ID }}
+          NOTION_REGION_REPORT_DATA_SOURCE_ID: ${{ secrets.NOTION_REGION_REPORT_DATA_SOURCE_ID }}
+          NOTION_GITHUB_REPORT_DATA_SOURCE_ID: ${{ secrets.NOTION_GITHUB_REPORT_DATA_SOURCE_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # 시크릿 이름은 GitHub의 예약 접두사(GITHUB_)를 피해 GH_로 붙였지만, 스크립트가
+          # 읽는 실제 환경변수 이름(GITHUB_MATCH_*)은 backend/app 코드와 그대로 맞춘다.
+          GITHUB_MATCH_USERNAME: ${{ secrets.GH_MATCH_USERNAME }}
+          GITHUB_MATCH_TOKEN: ${{ secrets.GH_MATCH_TOKEN }}
