@@ -74,16 +74,21 @@ def ingest_raw_jobs(
     """Notion RAW DB 전체를 페이지네이션으로 순회하며 공고링크 기준 upsert한다.
 
     공고링크가 없는 페이지(작성 중이거나 손상된 행)는 건너뛴다 — upsert의 dedup 키가
-    공고링크이기 때문에 빈 값으로는 안전하게 식별할 수 없다.
+    공고링크이기 때문에 빈 값으로는 안전하게 식별할 수 없다. RAW DB 건수만큼 매번 새
+    DB 커넥션을 여는 대신, 모은 뒤 한 번에 bulk_upsert_by_source_url()로 넘긴다 —
+    Neon처럼 단발성 프로세스가 매번 새 TLS 핸드셰이크를 거쳐야 하는 관리형 Postgres에서
+    건별 upsert는 RAW DB 규모(수백 건)에서 눈에 띄게 느리다.
     """
     fetched = 0
-    upserted = 0
+    entries: list[tuple[JobIn, str, str]] = []
     for page in iterate_data_source(data_source_id, token, http_client):
         fetched += 1
         job_dict = notion_page_to_job_dict(page)
         source_url = job_dict.get("공고링크")
         if not source_url:
             continue
-        repo.upsert_by_source_url(JobIn(**job_dict), source_url, page.get("id", ""))
-        upserted += 1
-    return IngestSummary(fetched=fetched, upserted=upserted)
+        entries.append((JobIn(**job_dict), source_url, page.get("id", "")))
+
+    if entries:
+        repo.bulk_upsert_by_source_url(entries)
+    return IngestSummary(fetched=fetched, upserted=len(entries))

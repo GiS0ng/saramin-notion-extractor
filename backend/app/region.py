@@ -43,25 +43,37 @@ REMOTE_BUCKET = "원격/전국무관"
 OTHER_BUCKET = "기타"
 
 _SIDO_SUFFIX = re.compile(r"(특별자치시|특별자치도|광역시|특별시|자치도|도)$")
+# Saramin의 지역 텍스트는 "(03926) 서울 마포구 ..."처럼 우편번호를 앞에 붙여 온다 —
+# 시/도 토큰을 뽑기 전에 이 접두사를 걷어내야 한다. 옛 5자리-하이픈 형식("(480-58)")도
+# 아직 남아있어 숫자만이 아니라 하이픈도 함께 허용한다.
+_POSTAL_CODE_PREFIX = re.compile(r"^\([\d-]{3,8}\)\s*")
+# 여러 지역에서 근무 가능한 공고는 "세종특별자치시, 부산전체"처럼 쉼표로 나열되고,
+# 시/도 이름 뒤에 "전체"가 공백 없이 붙기도 한다("부산전체" = 부산 전역).
+_TRAILING_PUNCT = re.compile(r"[,，·]+$")
+_ENTIRE_REGION_SUFFIX = re.compile(r"전체$")
 
 
-def normalize_region(raw: str) -> str:
-    text = unicodedata.normalize("NFKC", str(raw or "")).strip()
-    if not text:
-        return UNKNOWN_BUCKET
-    if any(keyword in text for keyword in REMOTE_KEYWORDS):
-        return REMOTE_BUCKET
-
-    token = text.split()[0]
+def _match_sido(token: str) -> str | None:
     if token in REGION_ALIASES:
         return REGION_ALIASES[token]
     if token in SIDO_CANONICAL:
         return token
-
     stripped = _SIDO_SUFFIX.sub("", token)
     if stripped in REGION_ALIASES:
         return REGION_ALIASES[stripped]
     if stripped in SIDO_CANONICAL:
         return stripped
+    return None
 
-    return OTHER_BUCKET
+
+def normalize_region(raw: str) -> str:
+    text = unicodedata.normalize("NFKC", str(raw or "")).strip()
+    text = _POSTAL_CODE_PREFIX.sub("", text).strip()
+    if not text:
+        return UNKNOWN_BUCKET
+    if any(keyword in text for keyword in REMOTE_KEYWORDS):
+        return REMOTE_BUCKET
+
+    token = _TRAILING_PUNCT.sub("", text.split()[0])
+    match = _match_sido(token) or _match_sido(_ENTIRE_REGION_SUFFIX.sub("", token))
+    return match or OTHER_BUCKET

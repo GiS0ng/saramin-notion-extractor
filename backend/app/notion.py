@@ -61,11 +61,12 @@ def get_http_client() -> Iterator[httpx.Client]:
         yield client
 
 
-def _request_with_retry(client: httpx.Client, path: str, token: str, *, json_body: dict) -> dict:
+def request_with_retry(client: httpx.Client, path: str, token: str, *, json_body: dict) -> dict:
     """POST {NOTION_API_BASE}{path}, backing off on 429/Retry-After.
 
     background.js's notionFetch() backs off the same way; create_analysis_database(),
-    query_data_source() 모두 이 헬퍼를 공유해서 재시도 로직이 한 곳에만 있게 한다.
+    query_data_source(), backend/app/notion_reports.py 모두 이 헬퍼를 공유해서 재시도
+    로직이 한 곳에만 있게 한다.
     """
     headers = {
         "Authorization": f"Bearer {token}",
@@ -85,7 +86,7 @@ def _request_with_retry(client: httpx.Client, path: str, token: str, *, json_bod
 
 
 def create_analysis_database(parent_page_id: str, token: str, client: httpx.Client) -> dict:
-    return _request_with_retry(
+    return request_with_retry(
         client,
         "/databases",
         token,
@@ -111,7 +112,7 @@ def query_data_source(
         body["filter"] = filter
     if start_cursor is not None:
         body["start_cursor"] = start_cursor
-    return _request_with_retry(client, f"/data_sources/{data_source_id}/query", token, json_body=body)
+    return request_with_retry(client, f"/data_sources/{data_source_id}/query", token, json_body=body)
 
 
 def iterate_data_source(

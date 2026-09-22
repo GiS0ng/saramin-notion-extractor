@@ -95,3 +95,25 @@ class CreateAnalysisDatabaseResponse(BaseModel):
     data_source_id: str
     url: str
     properties: list[str]
+
+
+class RegionSkillStat(BaseModel):
+    """지역 하나 · 기술스택 하나에 대한 주간 등장 빈도(%)."""
+
+    region: str
+    skill: str
+    frequency_pct: float
+    job_count: int
+
+
+class RegionSkillReport(BaseModel):
+    period: str
+    stats: list[RegionSkillStat]
+    sample_size: int
+
+
+class CreateRegionReportDatabaseResponse(BaseModel):
+    database_id: str
+    data_source_id: str
+    url: str
+    properties: list[str]

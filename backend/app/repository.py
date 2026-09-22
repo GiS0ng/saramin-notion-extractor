@@ -140,37 +140,48 @@ class PostgresJobRepository:
             ).mappings().first()
         return _row_to_record(row) if row else None
 
-    def upsert_by_source_url(self, payload: JobIn, source_url: str, notion_page_id: str) -> JobRecord:
-        """backend/app/ingest.py 전용: 공고링크 기준 upsert.
+    _UPSERT_SQL = text("""
+        INSERT INTO jobs (id, source_url, notion_page_id, title, region_raw,
+                           region_normalized, skills, deadline, raw_payload,
+                           received_at, updated_at)
+        VALUES (:id, :source_url, :notion_page_id, :title, :region_raw,
+                :region_normalized, :skills, :deadline, :raw_payload,
+                :received_at, :updated_at)
+        ON CONFLICT (source_url) DO UPDATE SET
+            notion_page_id = EXCLUDED.notion_page_id,
+            title = EXCLUDED.title,
+            region_raw = EXCLUDED.region_raw,
+            region_normalized = EXCLUDED.region_normalized,
+            skills = EXCLUDED.skills,
+            deadline = EXCLUDED.deadline,
+            raw_payload = EXCLUDED.raw_payload,
+            updated_at = EXCLUDED.updated_at
+        RETURNING *
+    """)
 
-        Notion RAW DB를 매주 전체 재조회해도 같은 공고가 중복 행으로 쌓이지 않도록 한다.
-        기존 행이 있으면 id/received_at은 그대로 두고 나머지만 갱신한다.
+    def upsert_by_source_url(self, payload: JobIn, source_url: str, notion_page_id: str) -> JobRecord:
+        """공고링크 기준 upsert. 기존 행이 있으면 id/received_at은 그대로 두고 나머지만 갱신한다.
+
+        여러 건을 한 번에 넣을 때는 이 메서드 대신 bulk_upsert_by_source_url()을 써라 — 이
+        메서드는 호출마다 새 커넥션을 열어서, ingest.py처럼 수백 건을 순회하며 부르면
+        (특히 NullPool을 쓰는 단발성 스크립트에서) 매번 Neon까지 새 TLS 핸드셰이크가 걸려 느리다.
         """
+        with self._engine.begin() as conn:
+            return self._upsert(conn, payload, source_url, notion_page_id)
+
+    def bulk_upsert_by_source_url(
+        self, entries: list[tuple[JobIn, str, str]]
+    ) -> list[JobRecord]:
+        """ingest.py 전용: 커넥션 하나로 여러 건을 한 트랜잭션에 upsert한다."""
+        with self._engine.begin() as conn:
+            return [self._upsert(conn, payload, source_url, notion_page_id)
+                    for payload, source_url, notion_page_id in entries]
+
+    def _upsert(self, conn, payload: JobIn, source_url: str, notion_page_id: str) -> JobRecord:
         record_id = str(uuid4())
         now = datetime.now(timezone.utc)
         params = self._row_params(record_id, payload, source_url, notion_page_id, now, now)
-        with self._engine.begin() as conn:
-            row = conn.execute(
-                text("""
-                    INSERT INTO jobs (id, source_url, notion_page_id, title, region_raw,
-                                       region_normalized, skills, deadline, raw_payload,
-                                       received_at, updated_at)
-                    VALUES (:id, :source_url, :notion_page_id, :title, :region_raw,
-                            :region_normalized, :skills, :deadline, :raw_payload,
-                            :received_at, :updated_at)
-                    ON CONFLICT (source_url) DO UPDATE SET
-                        notion_page_id = EXCLUDED.notion_page_id,
-                        title = EXCLUDED.title,
-                        region_raw = EXCLUDED.region_raw,
-                        region_normalized = EXCLUDED.region_normalized,
-                        skills = EXCLUDED.skills,
-                        deadline = EXCLUDED.deadline,
-                        raw_payload = EXCLUDED.raw_payload,
-                        updated_at = EXCLUDED.updated_at
-                    RETURNING *
-                """),
-                params,
-            ).mappings().first()
+        row = conn.execute(self._UPSERT_SQL, params).mappings().first()
         return _row_to_record(row)
 
 

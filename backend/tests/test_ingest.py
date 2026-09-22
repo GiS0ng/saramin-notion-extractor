@@ -50,8 +50,8 @@ class RecordingRepository:
     def __init__(self) -> None:
         self.calls: list[tuple[Any, str, str]] = []
 
-    def upsert_by_source_url(self, payload: Any, source_url: str, notion_page_id: str) -> None:
-        self.calls.append((payload, source_url, notion_page_id))
+    def bulk_upsert_by_source_url(self, entries: list[tuple[Any, str, str]]) -> None:
+        self.calls.extend(entries)
 
 
 def test_notion_page_to_job_dict_maps_all_supported_property_types() -> None:
