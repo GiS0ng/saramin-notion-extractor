@@ -5,10 +5,16 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.notion import ANALYSIS_DB_PROPERTIES, create_analysis_database, get_http_client
-from app.notion_reports import REGION_SKILL_REPORT_PROPERTIES, create_region_report_database
+from app.notion_reports import (
+    GITHUB_MATCH_REPORT_PROPERTIES,
+    REGION_SKILL_REPORT_PROPERTIES,
+    create_github_match_database,
+    create_region_report_database,
+)
 from app.schemas import (
     CreateAnalysisDatabaseRequest,
     CreateAnalysisDatabaseResponse,
+    CreateGithubMatchDatabaseResponse,
     CreateRegionReportDatabaseResponse,
 )
 
@@ -73,4 +79,22 @@ def create_region_report_db(
         data_source_id=result["data_sources"][0]["id"],
         url=result.get("url", ""),
         properties=list(REGION_SKILL_REPORT_PROPERTIES.keys()),
+    )
+
+
+@router.post(
+    "/github-match-database",
+    response_model=CreateGithubMatchDatabaseResponse,
+    status_code=201,
+)
+def create_github_match_db(
+    payload: CreateAnalysisDatabaseRequest,
+    client: httpx.Client = Depends(get_http_client),
+) -> CreateGithubMatchDatabaseResponse:
+    result = _create_database(create_github_match_database, payload.parent_page_id, client)
+    return CreateGithubMatchDatabaseResponse(
+        database_id=result["id"],
+        data_source_id=result["data_sources"][0]["id"],
+        url=result.get("url", ""),
+        properties=list(GITHUB_MATCH_REPORT_PROPERTIES.keys()),
     )

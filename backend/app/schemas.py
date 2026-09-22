@@ -117,3 +117,32 @@ class CreateRegionReportDatabaseResponse(BaseModel):
     data_source_id: str
     url: str
     properties: list[str]
+
+
+class GithubSkillProfile(BaseModel):
+    """GitHub 공개 저장소 언어/토픽을 core.js 스킬 어휘로 정규화해 합산한 가중치."""
+
+    username: str
+    skill_weights: dict[str, int]
+
+
+class RecommendedCompany(BaseModel):
+    rank: int
+    title: str
+    url: str
+    match_pct: float
+    matched_skills: list[str]
+    missing_skills: list[str]
+
+
+class GithubMatchReport(BaseModel):
+    username: str
+    period: str
+    recommendations: list[RecommendedCompany]
+
+
+class CreateGithubMatchDatabaseResponse(BaseModel):
+    database_id: str
+    data_source_id: str
+    url: str
+    properties: list[str]

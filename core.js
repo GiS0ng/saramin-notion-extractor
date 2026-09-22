@@ -447,6 +447,10 @@
     mergeOcrFields,
     normalizeScheduleConfig,
     nextWeeklyOccurrence,
-    currentWeeklyAnchor
+    currentWeeklyAnchor,
+    // scripts/export-skill-catalog.mjs가 이 어휘를 shared/skill-catalog.json으로 내보내
+    // 백엔드(backend/app/skills.py)가 같은 스킬 이름/별칭을 GitHub 매칭에도 쓴다.
+    SKILL_CATALOG,
+    SKILL_ALIASES
   };
 });
